@@ -1,0 +1,131 @@
+#!/bin/bash
+# agy-setup — Setup multi-account Antigravity dengan symlink
+# File UNIK per akun: antigravity-oauth-token, installation_id, log/, last_check.timestamp
+# File SHARED via symlink: history.jsonl, conversations/, settings.json, knowledge/, brain/, keybindings.json
+
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+BASE="$HOME/.gemini"
+SHARED="$BASE/agy-shared"
+ORIGINAL="$BASE/antigravity-cli"
+
+# File/folder yang di-SHARE antar semua akun
+SHARED_ITEMS=(
+    "history.jsonl"
+    "conversations"
+    "settings.json"
+    "knowledge"
+    "brain"
+    "keybindings.json"
+    "implicit"
+    "cache"
+    "bin"
+    "updater"
+    "packages"
+)
+
+# File/folder yang UNIK per akun (tidak di-share)
+UNIQUE_ITEMS=(
+    "antigravity-oauth-token"
+    "installation_id"
+    "log"
+    "last_check.timestamp"
+    "cli.log"
+)
+
+echo -e "${CYAN}================================================${NC}"
+echo -e "${GREEN}   Antigravity Multi-Account Setup (Symlink)   ${NC}"
+echo -e "${CYAN}================================================${NC}"
+echo ""
+
+# Cek apakah sudah pernah di-setup
+if [ -d "$SHARED" ]; then
+    echo -e "${YELLOW}Folder shared sudah ada di: $SHARED${NC}"
+    echo -e "Jalankan 'agy-new <nama_akun>' untuk menambah akun baru."
+    exit 0
+fi
+
+# Cek apakah folder original ada
+if [ ! -d "$ORIGINAL" ]; then
+    echo -e "${RED}Folder antigravity-cli tidak ditemukan di $ORIGINAL${NC}"
+    echo "Pastikan Antigravity sudah pernah dijalankan minimal sekali."
+    exit 1
+fi
+
+echo -e "Langkah 1: Membuat folder shared dari data saat ini..."
+mkdir -p "$SHARED"
+
+# Pindahkan semua file shared ke folder shared
+for item in "${SHARED_ITEMS[@]}"; do
+    if [ -e "$ORIGINAL/$item" ] && [ ! -L "$ORIGINAL/$item" ]; then
+        mv "$ORIGINAL/$item" "$SHARED/$item"
+        echo -e "  ${GREEN}✔${NC} Dipindahkan: $item → agy-shared/"
+    fi
+done
+
+echo ""
+echo -e "Langkah 2: Membuat direktori akun pertama dari akun saat ini..."
+
+# Ambil nama akun pertama dari user
+read -p "Nama untuk akun aktif saat ini (misal: utama, akun1): " FIRST_ACCOUNT
+if [ -z "$FIRST_ACCOUNT" ]; then
+    FIRST_ACCOUNT="akun1"
+fi
+
+ACCT_DIR="$BASE/agy-$FIRST_ACCOUNT"
+mkdir -p "$ACCT_DIR"
+
+# Pindahkan file UNIK ke folder akun pertama
+for item in "${UNIQUE_ITEMS[@]}"; do
+    if [ -e "$ORIGINAL/$item" ] && [ ! -L "$ORIGINAL/$item" ]; then
+        mv "$ORIGINAL/$item" "$ACCT_DIR/$item"
+        echo -e "  ${GREEN}✔${NC} Dipindahkan (unik): $item → agy-$FIRST_ACCOUNT/"
+    fi
+done
+
+# Buat symlink dari akun pertama ke shared
+for item in "${SHARED_ITEMS[@]}"; do
+    if [ -e "$SHARED/$item" ]; then
+        ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
+        echo -e "  ${CYAN}🔗${NC} Symlink: agy-$FIRST_ACCOUNT/$item → agy-shared/$item"
+    fi
+done
+
+# Backup dan ganti folder original dengan symlink ke akun pertama
+echo ""
+echo -e "Langkah 3: Mengganti folder antigravity-cli dengan symlink ke akun aktif..."
+rm -rf "$ORIGINAL"
+ln -sf "$ACCT_DIR" "$ORIGINAL"
+echo -e "  ${GREEN}✔${NC} $ORIGINAL → agy-$FIRST_ACCOUNT"
+
+# Buat wrapper command
+WRAPPER="/usr/local/bin/agy-$FIRST_ACCOUNT"
+cat > "$WRAPPER" <<EOF
+#!/bin/bash
+# Wrapper akun: $FIRST_ACCOUNT
+ACCT_DIR="$ACCT_DIR"
+
+# Arahkan antigravity-cli ke direktori akun ini
+if [ -L "$ORIGINAL" ] || [ -d "$ORIGINAL" ]; then
+    rm -f "$ORIGINAL"
+fi
+ln -sf "\$ACCT_DIR" "$ORIGINAL"
+
+exec agy "\$@"
+EOF
+chmod +x "$WRAPPER"
+echo -e "  ${GREEN}✔${NC} Perintah dibuat: agy-$FIRST_ACCOUNT"
+
+echo ""
+echo -e "${GREEN}================================================${NC}"
+echo -e "${GREEN}  Setup selesai! Akun '$FIRST_ACCOUNT' siap.  ${NC}"
+echo -e "${GREEN}================================================${NC}"
+echo ""
+echo -e "Selanjutnya:"
+echo -e "  Tambah akun baru : ${YELLOW}agy-new <nama_akun>${NC}"
+echo -e "  Manager interaktif: ${YELLOW}antiz${NC}"
+echo -e "  Jalankan akun    : ${YELLOW}agy-$FIRST_ACCOUNT${NC}"

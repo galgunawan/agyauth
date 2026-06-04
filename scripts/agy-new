@@ -1,0 +1,89 @@
+#!/bin/bash
+# agy-new — Tambah akun Antigravity baru dengan symlink ke shared data
+
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+BASE="$HOME/.gemini"
+SHARED="$BASE/agy-shared"
+ORIGINAL="$BASE/antigravity-cli"
+
+SHARED_ITEMS=(
+    "history.jsonl"
+    "conversations"
+    "settings.json"
+    "knowledge"
+    "brain"
+    "keybindings.json"
+    "implicit"
+    "cache"
+    "bin"
+    "updater"
+    "packages"
+)
+
+NAME="$1"
+if [ -z "$NAME" ]; then
+    read -p "Nama akun baru (misal: akun2, kantor): " NAME
+fi
+if [ -z "$NAME" ]; then
+    echo -e "${RED}Nama akun tidak boleh kosong.${NC}"
+    exit 1
+fi
+
+ACCT_DIR="$BASE/agy-$NAME"
+
+if [ -d "$ACCT_DIR" ]; then
+    echo -e "${RED}Akun 'agy-$NAME' sudah ada!${NC}"
+    exit 1
+fi
+
+if [ ! -d "$SHARED" ]; then
+    echo -e "${RED}Folder shared belum ada. Jalankan 'agy-setup' terlebih dahulu.${NC}"
+    exit 1
+fi
+
+echo -e "${CYAN}Membuat akun baru: agy-$NAME${NC}"
+mkdir -p "$ACCT_DIR"
+mkdir -p "$ACCT_DIR/log"
+
+# Generate installation_id baru yang unik
+NEW_ID=$(cat /proc/sys/kernel/random/uuid)
+echo "$NEW_ID" > "$ACCT_DIR/installation_id"
+echo -e "  ${GREEN}✔${NC} installation_id baru: $NEW_ID"
+
+# Buat symlink ke shared
+for item in "${SHARED_ITEMS[@]}"; do
+    if [ -e "$SHARED/$item" ]; then
+        ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
+        echo -e "  ${CYAN}🔗${NC} Symlink: $item → agy-shared/$item"
+    fi
+done
+
+# Buat wrapper command
+WRAPPER="/usr/local/bin/agy-$NAME"
+cat > "$WRAPPER" <<EOF
+#!/bin/bash
+# Wrapper akun: $NAME
+ACCT_DIR="$ACCT_DIR"
+ORIGINAL="$ORIGINAL"
+
+# Switch symlink antigravity-cli ke akun ini
+rm -f "\$ORIGINAL"
+ln -sf "\$ACCT_DIR" "\$ORIGINAL"
+
+exec agy "\$@"
+EOF
+chmod +x "$WRAPPER"
+
+echo ""
+echo -e "${GREEN}Akun 'agy-$NAME' berhasil dibuat!${NC}"
+echo ""
+echo -e "Langkah selanjutnya:"
+echo -e "  1. Jalankan ${YELLOW}agy-$NAME${NC} untuk masuk ke akun ini"
+echo -e "  2. Lakukan login dengan akun Google yang berbeda"
+echo -e "  3. Setelah login, akun ini akan menyimpan token secara terpisah"
+echo -e "  4. History & config otomatis terbagi dengan akun lain ✅"

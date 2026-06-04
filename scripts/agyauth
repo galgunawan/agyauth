@@ -1,0 +1,530 @@
+#!/bin/bash
+# agyauth v2 — Antigravity Multi-Account Manager (Premium TUI)
+
+BASE="$HOME/.gemini"
+SHARED="$BASE/agy-shared"
+ORIGINAL="$BASE/antigravity-cli"
+
+# ── Warna ──────────────────────────────────────────────────────
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_DIM='\033[2m'
+C_GREEN='\033[38;5;84m'
+C_CYAN='\033[38;5;51m'
+C_BLUE='\033[38;5;75m'
+C_YELLOW='\033[38;5;220m'
+C_RED='\033[38;5;203m'
+C_PURPLE='\033[38;5;141m'
+C_WHITE='\033[38;5;255m'
+C_GRAY='\033[38;5;240m'
+C_BG_SEL='\033[48;5;236m'
+C_BG_HDR='\033[48;5;234m'
+
+# ── Box Drawing ─────────────────────────────────────────────────
+BOX_TL='╭'; BOX_TR='╮'; BOX_BL='╰'; BOX_BR='╯'
+BOX_H='─'; BOX_V='│'; BOX_ML='├'; BOX_MR='┤'
+SEP='·'
+
+# ── Ukuran terminal ─────────────────────────────────────────────
+TERM_W=$(tput cols)
+TERM_H=$(tput lines)
+
+trap 'tput cnorm; tput rmcup; exit' INT TERM EXIT
+
+# ── Helper: buat baris horizontal ──────────────────────────────
+hline() {
+    local char="${1:-$BOX_H}" len="${2:-$TERM_W}"
+    printf '%*s' "$len" | tr ' ' "$char"
+}
+
+# ── Helper: center text ─────────────────────────────────────────
+center() {
+    local text="$1" width="${2:-$TERM_W}"
+    local clean=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
+    local pad=$(( (width - ${#clean}) / 2 ))
+    printf '%*s%b%s\n' "$pad" '' "$text" "$C_RESET"
+}
+
+# ── Helper: box ─────────────────────────────────────────────────
+draw_box() {
+    local title="$1" width="${2:-60}"
+    local inner=$((width - 2))
+    echo -e "${C_CYAN}${BOX_TL}$(hline $BOX_H $inner)${BOX_TR}${C_RESET}"
+    if [ -n "$title" ]; then
+        local tlen=${#title}
+        local lpad=$(( (inner - tlen - 2) / 2 ))
+        local rpad=$(( inner - tlen - 2 - lpad ))
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $lpad '') ${C_BOLD}${C_WHITE}${title}${C_RESET} $(printf '%*s' $rpad '')${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_ML}$(hline $BOX_H $inner)${BOX_MR}${C_RESET}"
+    fi
+}
+
+draw_box_bottom() {
+    local width="${1:-60}"
+    local inner=$((width - 2))
+    echo -e "${C_CYAN}${BOX_BL}$(hline $BOX_H $inner)${BOX_BR}${C_RESET}"
+}
+
+# ── Helper: format baris dalam box ─────────────────────────────
+box_row() {
+    local label="$1" value="$2" width="${3:-60}"
+    local inner=$((width - 2))
+    local llen=${#label}
+    local clean_val=$(echo -e "$value" | sed 's/\x1b\[[0-9;]*m//g')
+    local vlen=${#clean_val}
+    local dots_len=$((inner - llen - vlen - 4))
+    [ $dots_len -lt 1 ] && dots_len=1
+    local dots=$(printf '%*s' $dots_len | tr ' ' "$SEP")
+    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_GRAY}${label}${C_RESET} ${C_DIM}${C_GRAY}${dots}${C_RESET} ${value} ${C_CYAN}${BOX_V}${C_RESET}"
+}
+
+box_empty() {
+    local width="${1:-60}"
+    local inner=$((width - 2))
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $inner '')${C_CYAN}${BOX_V}${C_RESET}"
+}
+
+# ── Ambil data akun ─────────────────────────────────────────────
+get_expiry() {
+    local file="$1/antigravity-oauth-token"
+    [ ! -f "$file" ] && echo "${C_RED}No Token${C_RESET}" && return
+    local raw=$(jq -r '.token.expiry // empty' "$file" 2>/dev/null)
+    [ -z "$raw" ] && echo "${C_GRAY}No Expiry${C_RESET}" && return
+
+    local exp_ts=$(date -d "$raw" +%s 2>/dev/null)
+    local now_ts=$(date +%s)
+    local diff=$((exp_ts - now_ts))
+
+    local formatted=$(TZ='Asia/Jakarta' date -d "$raw" '+%d %b %Y %H:%M WIB' 2>/dev/null)
+
+    if [ $diff -lt 0 ]; then
+        echo "${C_RED}✗ Expired${C_RESET}"
+    elif [ $diff -lt 1800 ]; then
+        echo "${C_RED}⚠ $formatted${C_RESET}"
+    elif [ $diff -lt 7200 ]; then
+        echo "${C_YELLOW}◑ $formatted${C_RESET}"
+    else
+        echo "${C_GREEN}✓ $formatted${C_RESET}"
+    fi
+}
+
+get_expiry_plain() {
+    local file="$1/antigravity-oauth-token"
+    [ ! -f "$file" ] && echo "No Token" && return
+    local raw=$(jq -r '.token.expiry // empty' "$file" 2>/dev/null)
+    [ -z "$raw" ] && echo "No Expiry" && return
+    TZ='Asia/Jakarta' date -d "$raw" '+%d %b %H:%M WIB' 2>/dev/null || echo "Invalid"
+}
+
+get_token_status() {
+    local file="$1/antigravity-oauth-token"
+    [ ! -f "$file" ] && echo "none" && return
+    local raw=$(jq -r '.token.expiry // empty' "$file" 2>/dev/null)
+    [ -z "$raw" ] && echo "none" && return
+    local exp_ts=$(date -d "$raw" +%s 2>/dev/null)
+    local now_ts=$(date +%s)
+    local diff=$((exp_ts - now_ts))
+    if [ $diff -lt 0 ]; then echo "expired"
+    elif [ $diff -lt 1800 ]; then echo "warning"
+    elif [ $diff -lt 7200 ]; then echo "expiring"
+    else echo "ok"
+    fi
+}
+
+get_install_id() {
+    local file="$1/installation_id"
+    [ -f "$file" ] && cat "$file" | cut -c1-8 || echo "N/A"
+}
+
+get_active_account() {
+    [ -L "$ORIGINAL" ] && basename "$(readlink "$ORIGINAL")" | sed 's/^agy-//' || echo "unknown"
+}
+
+get_all_accounts() {
+    for dir in "$BASE"/agy-*/; do
+        [ -d "$dir" ] && [ "$(basename "$dir")" != "agy-shared" ] && basename "$dir" | sed 's/^agy-//'
+    done
+}
+
+# ── Render menu navigasi ────────────────────────────────────────
+render_menu() {
+    local -n opts=$1
+    local sel=$2
+    local width="${3:-60}"
+
+    for i in "${!opts[@]}"; do
+        local label="${opts[$i]}"
+        local inner=$((width - 4))
+        local clean=$(echo -e "$label" | sed 's/\x1b\[[0-9;]*m//g')
+        local pad=$((inner - ${#clean}))
+        [ $pad -lt 0 ] && pad=0
+
+        if [ "$i" -eq "$sel" ]; then
+            echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_GREEN}${C_BOLD} ❯ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
+        else
+            echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${C_DIM}${label}${C_RESET}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
+        fi
+    done
+}
+
+# ── Read key ────────────────────────────────────────────────────
+read_key() {
+    local key
+    read -rsn1 key
+    if [[ $key == $'\x1b' ]]; then
+        read -rsn2 key2
+        case "$key2" in
+            '[A') echo "UP" ;;
+            '[B') echo "DOWN" ;;
+            '[C') echo "RIGHT" ;;
+            '[D') echo "LEFT" ;;
+            *) echo "ESC" ;;
+        esac
+    elif [[ $key == "" ]]; then echo "ENTER"
+    elif [[ $key == "q" ]] || [[ $key == "Q" ]]; then echo "QUIT"
+    elif [[ $key == "j" ]]; then echo "DOWN"
+    elif [[ $key == "k" ]]; then echo "UP"
+    else echo "OTHER"
+    fi
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── MAIN MENU ───────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+show_main_menu() {
+    local W=62
+    local options=(
+        "🔄  Switch Akun"
+        "➕  Buat Akun Baru"
+        "📋  Lihat Semua Akun"
+        "🗑️   Hapus Akun"
+        "❌  Keluar"
+    )
+    local selected=0
+
+    while true; do
+        local ACTIVE=$(get_active_account)
+        local ACCT_DIR="$BASE/agy-$ACTIVE"
+        local EXP=$(get_expiry "$ACCT_DIR")
+        local IID=$(get_install_id "$ACCT_DIR")
+        local STATUS=$(get_token_status "$ACCT_DIR")
+        local ACC_COUNT=$(get_all_accounts | wc -l)
+
+        tput cup 0 0
+        tput ed
+
+        # Header
+        echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
+        center "${C_BOLD}${C_CYAN}⚡ ANTIGRAVITY ACCOUNT MANAGER${C_RESET}" $W
+        center "${C_DIM}${C_GRAY}Multi-Account · Symlink Architecture · Isolated IDs${C_RESET}" $W
+        echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
+        echo ""
+
+        # Info Panel
+        draw_box "Active Session" $W
+        box_row "Account"       "${C_BOLD}${C_GREEN}$ACTIVE${C_RESET}" $W
+        box_row "Install ID"    "${C_YELLOW}${IID}...${C_RESET}" $W
+        box_row "Token Expiry"  "$EXP" $W
+        box_row "Total Accounts" "${C_CYAN}${ACC_COUNT} account(s)${C_RESET}" $W
+        box_row "Shared Data"   "${C_BLUE}~/.gemini/agy-shared/${C_RESET}" $W
+        box_empty $W
+        draw_box_bottom $W
+        echo ""
+
+        # Menu
+        draw_box "Menu" $W
+        render_menu options $selected $W
+        draw_box_bottom $W
+        echo ""
+
+        # Footer hint
+        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Select   q Quit${C_RESET}"
+
+        # Input
+        local k=$(read_key)
+        case $k in
+            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
+            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
+            ENTER) break ;;
+            QUIT)  tput cnorm; tput rmcup; exit 0 ;;
+        esac
+    done
+
+    tput cnorm
+    case $selected in
+        0) switch_account ;;
+        1) create_account ;;
+        2) list_accounts ;;
+        3) delete_account ;;
+        4) tput rmcup; exit 0 ;;
+    esac
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── SWITCH ACCOUNT ──────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+switch_account() {
+    local W=70
+    local all=($(get_all_accounts))
+    if [ ${#all[@]} -eq 0 ]; then
+        tput cup 0 0; tput ed
+        draw_box "Switch Akun" $W
+        box_empty $W
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_RED}Belum ada akun. Jalankan 'agy-setup' dulu.${C_RESET}  ${C_CYAN}${BOX_V}${C_RESET}"
+        box_empty $W
+        draw_box_bottom $W
+        read -p " Tekan Enter..."
+        return
+    fi
+
+    local ACTIVE=$(get_active_account)
+    local options=()
+    for name in "${all[@]}"; do
+        local exp=$(get_expiry_plain "$BASE/agy-$name")
+        local iid=$(get_install_id "$BASE/agy-$name")
+        local status=$(get_token_status "$BASE/agy-$name")
+        local badge=""
+        case $status in
+            ok)      badge="${C_GREEN}●${C_RESET}" ;;
+            expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
+            warning) badge="${C_RED}⚠${C_RESET}" ;;
+            expired) badge="${C_RED}✗${C_RESET}" ;;
+            *)       badge="${C_GRAY}○${C_RESET}" ;;
+        esac
+        if [ "$name" == "$ACTIVE" ]; then
+            options+=("$badge ${C_BOLD}${name}${C_RESET} ${C_CYAN}[ACTIVE]${C_RESET}  ID:${iid}  ${exp}")
+        else
+            options+=("$badge ${name}  ID:${iid}  ${exp}")
+        fi
+    done
+    options+=("${C_GRAY}← Kembali${C_RESET}")
+
+    local selected=0
+    while true; do
+        tput cup 0 0; tput ed
+
+        draw_box "Switch Akun — Pilih Akun Target" $W
+        box_empty $W
+        render_menu options $selected $W
+        box_empty $W
+        draw_box_bottom $W
+        echo ""
+        echo -e " ${C_DIM}${C_GRAY}● OK  ◑ Expiring  ⚠ Warning  ✗ Expired${C_RESET}"
+        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
+
+        local k=$(read_key)
+        case $k in
+            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
+            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
+            ENTER|RIGHT) break ;;
+            QUIT)  return ;;
+        esac
+    done
+
+    tput cnorm
+    if [ "$selected" -lt "${#all[@]}" ]; then
+        local target="${all[$selected]}"
+        rm -f "$ORIGINAL"
+        ln -sf "$BASE/agy-$target" "$ORIGINAL"
+
+        tput cup 0 0; tput ed
+        echo ""
+        center "${C_GREEN}${C_BOLD}✔ Berhasil Switch!${C_RESET}" $W
+        echo ""
+        draw_box "Status" $W
+        box_row "Akun Aktif"     "${C_GREEN}${C_BOLD}$target${C_RESET}" $W
+        box_row "Install ID"     "${C_YELLOW}$(get_install_id "$BASE/agy-$target")...${C_RESET}" $W
+        box_row "History Shared" "${C_GREEN}✓ Tetap terbagi${C_RESET}" $W
+        box_row "Config Shared"  "${C_GREEN}✓ Tetap terbagi${C_RESET}" $W
+        box_row "Isolation"      "${C_GREEN}✓ Token & ID unik${C_RESET}" $W
+        box_empty $W
+        draw_box_bottom $W
+        echo ""
+        read -p " Tekan Enter untuk kembali..."
+    fi
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── CREATE ACCOUNT ──────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+create_account() {
+    local W=62
+    tput cup 0 0; tput ed; tput cnorm
+
+    echo ""
+    draw_box "Buat Akun Baru" $W
+    box_empty $W
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Setiap akun akan memiliki:${C_RESET}$(printf '%*s' 25 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} installation_id unik (baru & random)$(printf '%*s' 12 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Token OAuth terpisah$(printf '%*s' 28 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_CYAN}🔗${C_RESET} History & config terbagi via symlink$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
+    box_empty $W
+    draw_box_bottom $W
+    echo ""
+    read -p " Nama akun baru (misal: akun2, kantor): " name
+    if [ -n "$name" ]; then
+        echo ""
+        agy-new "$name"
+        echo ""
+        echo -e " ${C_GREEN}${C_BOLD}✔ Selesai!${C_RESET} Jalankan ${C_YELLOW}agy-${name}${C_RESET} untuk login ke akun ini."
+    else
+        echo -e " ${C_RED}Dibatalkan.${C_RESET}"
+    fi
+    echo ""
+    read -p " Tekan Enter untuk kembali..."
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── LIST ACCOUNTS ───────────────────────────────────════════════
+# ════════════════════════════════════════════════════════════════
+list_accounts() {
+    local W=72
+    local ACTIVE=$(get_active_account)
+    tput cup 0 0; tput ed; tput cnorm
+
+    echo ""
+    draw_box "Semua Akun Antigravity" $W
+    box_empty $W
+
+    # Header kolom
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_BOLD}${C_WHITE}$(printf '%-12s %-10s %-10s %-8s %s' 'NAMA' 'INSTALL ID' 'STATUS' 'TOKEN' 'EXPIRY')${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
+
+    local count=0
+    for name in $(get_all_accounts); do
+        local iid=$(get_install_id "$BASE/agy-$name")
+        local status=$(get_token_status "$BASE/agy-$name")
+        local exp=$(get_expiry_plain "$BASE/agy-$name")
+        local badge="" status_text=""
+
+        case $status in
+            ok)      badge="${C_GREEN}●${C_RESET}"; status_text="${C_GREEN}Active ${C_RESET}" ;;
+            expiring) badge="${C_YELLOW}◑${C_RESET}"; status_text="${C_YELLOW}Expiring${C_RESET}" ;;
+            warning) badge="${C_RED}⚠${C_RESET}"; status_text="${C_RED}Warning ${C_RESET}" ;;
+            expired) badge="${C_RED}✗${C_RESET}"; status_text="${C_RED}Expired ${C_RESET}" ;;
+            *)       badge="${C_GRAY}○${C_RESET}"; status_text="${C_GRAY}No Token${C_RESET}" ;;
+        esac
+
+        local cur_mark=""
+        [ "$name" == "$ACTIVE" ] && cur_mark=" ${C_CYAN}◀${C_RESET}"
+
+        echo -e "${C_CYAN}${BOX_V}${C_RESET} $badge ${C_BOLD}$(printf '%-11s' "$name")${C_RESET}${cur_mark} $(printf '%-10s' "${iid}...") $status_text  ${C_DIM}${exp}${C_RESET}$(printf '%*s' 2 '')${C_CYAN}${BOX_V}${C_RESET}"
+        ((count++))
+    done
+
+    if [ $count -eq 0 ]; then
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Belum ada akun. Jalankan 'agy-setup'.${C_RESET}$(printf '%*s' 22 '')${C_CYAN}${BOX_V}${C_RESET}"
+    fi
+
+    echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Total: ${C_WHITE}${count} akun${C_RESET}$(printf '%*s' $((W-14)) '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Shared: ${C_BLUE}~/.gemini/agy-shared/ ${C_GRAY}(history, config, knowledge)${C_RESET}$(printf '%*s' 3 '')${C_CYAN}${BOX_V}${C_RESET}"
+    box_empty $W
+    draw_box_bottom $W
+    echo ""
+    echo -e " ${C_DIM}${C_GRAY}◀ = Akun aktif saat ini${C_RESET}"
+    echo ""
+    read -p " Tekan Enter untuk kembali..."
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── DELETE ACCOUNT ──────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+delete_account() {
+    local W=66
+    local ACTIVE=$(get_active_account)
+    local all=($(get_all_accounts))
+
+    if [ ${#all[@]} -eq 0 ]; then
+        tput cup 0 0; tput ed
+        echo -e "\n ${C_RED}Belum ada akun.${C_RESET}\n"
+        read -p " Tekan Enter..."; return
+    fi
+
+    local options=()
+    for name in "${all[@]}"; do
+        local exp=$(get_expiry_plain "$BASE/agy-$name")
+        local iid=$(get_install_id "$BASE/agy-$name")
+        if [ "$name" == "$ACTIVE" ]; then
+            options+=("${C_GRAY}⊘ ${name} [AKTIF — tidak bisa dihapus]${C_RESET}")
+        else
+            options+=("${C_RED}✗${C_RESET} ${name}  ID:${iid}  ${exp}")
+        fi
+    done
+    options+=("${C_GRAY}← Kembali${C_RESET}")
+
+    local selected=0
+    while true; do
+        tput cup 0 0; tput ed
+
+        draw_box "Hapus Akun" $W
+        box_empty $W
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_YELLOW}⚠ Token & installation_id akan dihapus permanen.${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓ History & config di agy-shared aman.${C_RESET}$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
+        box_empty $W
+        echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
+        render_menu options $selected $W
+        box_empty $W
+        draw_box_bottom $W
+        echo ""
+        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
+
+        local k=$(read_key)
+        case $k in
+            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
+            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
+            ENTER) break ;;
+            QUIT)  return ;;
+        esac
+    done
+
+    tput cnorm
+    if [ "$selected" -lt "${#all[@]}" ]; then
+        local target="${all[$selected]}"
+        if [ "$target" == "$ACTIVE" ]; then
+            echo -e "\n ${C_RED}Tidak bisa menghapus akun yang sedang aktif!${C_RESET}\n"
+        else
+            echo ""
+            draw_box "Konfirmasi Hapus" $W
+            box_row "Akun"   "${C_RED}${C_BOLD}$target${C_RESET}" $W
+            box_row "Action" "${C_RED}Hapus token & installation_id${C_RESET}" $W
+            box_row "Safe"   "${C_GREEN}History & config tetap aman${C_RESET}" $W
+            box_empty $W
+            draw_box_bottom $W
+            echo ""
+            read -p " Yakin? (y/n): " confirm
+            if [[ "$confirm" == "y" ]]; then
+                rm -rf "$BASE/agy-$target"
+                rm -f "/usr/local/bin/agy-$target"
+                echo -e "\n ${C_GREEN}✔ Akun '${target}' berhasil dihapus.${C_RESET}"
+            else
+                echo -e " ${C_GRAY}Dibatalkan.${C_RESET}"
+            fi
+        fi
+        echo ""
+        read -p " Tekan Enter untuk kembali..."
+    fi
+}
+
+# ════════════════════════════════════════════════════════════════
+# ── ENTRY POINT ─────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+if [ ! -d "$SHARED" ]; then
+    tput cnorm
+    echo ""
+    echo -e " ${C_YELLOW}${C_BOLD}⚠ Setup belum dijalankan!${C_RESET}"
+    echo ""
+    echo -e " Jalankan terlebih dahulu: ${C_GREEN}agy-setup${C_RESET}"
+    echo ""
+    read -p " Mau jalankan sekarang? (y/n): " confirm
+    [[ "$confirm" == "y" ]] && agy-setup
+    exit 0
+fi
+
+tput smcup
+tput civis
+tput clear
+
+while true; do
+    show_main_menu
+done
