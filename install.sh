@@ -21,13 +21,30 @@ echo -e "${CYAN}${BOLD}│  Multi-Account Manager for Antigravity   │${NC}"
 echo -e "${CYAN}${BOLD}╰──────────────────────────────────────────╯${NC}"
 echo ""
 
+# Cek apakah perlu sudo
+if [ "$EUID" -ne 0 ]; then
+    if command -v sudo &>/dev/null; then
+        SUDO="sudo"
+        echo -e "${YELLOW}ℹ Running as non-root, using sudo...${NC}"
+        echo ""
+    else
+        # Fallback ke ~/.local/bin jika tidak ada sudo
+        INSTALL_DIR="$HOME/.local/bin"
+        mkdir -p "$INSTALL_DIR"
+        SUDO=""
+        echo -e "${YELLOW}ℹ No sudo found, installing to $INSTALL_DIR${NC}"
+        echo -e "${YELLOW}  Make sure $INSTALL_DIR is in your PATH${NC}"
+        echo ""
+    fi
+else
+    SUDO=""
+fi
+
 # Cek dependencies
 echo -e "${YELLOW}▶ Checking dependencies...${NC}"
 
-MISSING=0
-
 if ! command -v bash &>/dev/null; then
-    echo -e "  ${RED}✗ bash not found${NC}"; MISSING=1
+    echo -e "  ${RED}✗ bash not found${NC}"
 else
     echo -e "  ${GREEN}✓ bash${NC}"
 fi
@@ -35,11 +52,11 @@ fi
 if ! command -v jq &>/dev/null; then
     echo -e "  ${YELLOW}⚠ jq not found — installing...${NC}"
     if command -v apt-get &>/dev/null; then
-        apt-get install -y jq -qq
+        $SUDO apt-get install -y jq -qq
     elif command -v yum &>/dev/null; then
-        yum install -y jq -q
+        $SUDO yum install -y jq -q
     else
-        echo -e "  ${RED}✗ Cannot auto-install jq. Please install it manually: https://jqlang.github.io/jq/${NC}"
+        echo -e "  ${RED}✗ Cannot auto-install jq. Please install manually.${NC}"
         exit 1
     fi
     echo -e "  ${GREEN}✓ jq installed${NC}"
@@ -49,8 +66,9 @@ fi
 
 if ! command -v agy &>/dev/null; then
     echo -e "  ${YELLOW}⚠ 'agy' (Antigravity CLI) not found.${NC}"
-    echo -e "    agyauth requires Antigravity CLI to function."
-    echo -e "    Install it from: https://github.com/google-gemini/antigravity"
+    echo -e "    agyauth will be installed, but you need Antigravity CLI to use it."
+    echo -e "    Download from: https://antigravity.dev"
+    echo ""
 else
     echo -e "  ${GREEN}✓ agy (Antigravity CLI)${NC}"
 fi
@@ -61,8 +79,10 @@ echo -e "${YELLOW}▶ Downloading scripts...${NC}"
 SCRIPTS=("agyauth" "agy-setup" "agy-new")
 
 for script in "${SCRIPTS[@]}"; do
-    curl -fsSL "$REPO/scripts/$script" -o "$INSTALL_DIR/$script"
-    chmod +x "$INSTALL_DIR/$script"
+    TMP=$(mktemp /tmp/agyauth-XXXXXX)
+    curl -fsSL "$REPO/scripts/$script" -o "$TMP"
+    $SUDO mv "$TMP" "$INSTALL_DIR/$script"
+    $SUDO chmod +x "$INSTALL_DIR/$script"
     echo -e "  ${GREEN}✓ $script → $INSTALL_DIR/$script${NC}"
 done
 
