@@ -192,23 +192,54 @@ read_key() {
 # ── MAIN MENU ───────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════
 show_main_menu() {
-    local W=62
-    local options=(
-        "🔄  Switch Akun"
-        "➕  Buat Akun Baru"
-        "📋  Lihat Semua Akun"
-        "🗑️   Hapus Akun"
-        "❌  Keluar"
-    )
+    local W=66
     local selected=0
 
     while true; do
         local ACTIVE=$(get_active_account)
-        local ACCT_DIR="$BASE/agy-$ACTIVE"
-        local EXP=$(get_expiry "$ACCT_DIR")
-        local IID=$(get_install_id "$ACCT_DIR")
-        local STATUS=$(get_token_status "$ACCT_DIR")
-        local ACC_COUNT=$(get_all_accounts | wc -l)
+        local all=($(get_all_accounts))
+        local acc_count=${#all[@]}
+
+        # Bangun daftar item: akun dulu, lalu actions
+        local items=()
+        local item_types=()   # "account" atau "action"
+        local item_names=()   # nama akun atau nama action
+
+        for name in "${all[@]}"; do
+            local exp=$(get_expiry_plain "$BASE/agy-$name")
+            local iid=$(get_install_id "$BASE/agy-$name")
+            local status=$(get_token_status "$BASE/agy-$name")
+            local badge=""
+            case $status in
+                ok)      badge="${C_GREEN}●${C_RESET}" ;;
+                expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
+                warning) badge="${C_RED}⚠${C_RESET}" ;;
+                expired) badge="${C_RED}✗${C_RESET}" ;;
+                *)       badge="${C_GRAY}○${C_RESET}" ;;
+            esac
+            local active_mark=""
+            [ "$name" == "$ACTIVE" ] && active_mark=" ${C_CYAN}[aktif]${C_RESET}"
+            items+=("$badge ${C_BOLD}${name}${C_RESET}${active_mark}  ${C_GRAY}ID:${iid}  ${exp}${C_RESET}")
+            item_types+=("account")
+            item_names+=("$name")
+        done
+
+        # Separator action
+        items+=("${C_GRAY}────────────────────────────────────${C_RESET}")
+        item_types+=("sep")
+        item_names+=("")
+
+        items+=("➕  Buat Akun Baru")
+        item_types+=("action")
+        item_names+=("new")
+
+        items+=("🗑️   Hapus Akun")
+        item_types+=("action")
+        item_names+=("delete")
+
+        items+=("❌  Keluar")
+        item_types+=("action")
+        item_names+=("quit")
 
         tput cup 0 0
         tput ed
@@ -216,49 +247,96 @@ show_main_menu() {
         # Header
         echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
         center "${C_BOLD}${C_CYAN}⚡ ANTIGRAVITY ACCOUNT MANAGER${C_RESET}" $W
-        center "${C_DIM}${C_GRAY}Multi-Account · Symlink Architecture · Isolated IDs${C_RESET}" $W
+        center "${C_DIM}${C_GRAY}Pilih akun untuk login · agyauth${C_RESET}" $W
         echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
         echo ""
 
-        # Info Panel
-        draw_box "Active Session" $W
-        box_row "Account"       "${C_BOLD}${C_GREEN}$ACTIVE${C_RESET}" $W
-        box_row "Install ID"    "${C_YELLOW}${IID}...${C_RESET}" $W
-        box_row "Token Expiry"  "$EXP" $W
-        box_row "Total Accounts" "${C_CYAN}${ACC_COUNT} account(s)${C_RESET}" $W
-        box_row "Shared Data"   "${C_BLUE}~/.gemini/agy-shared/${C_RESET}" $W
-        box_empty $W
+        # Panel Login sebagai
+        draw_box "Login sebagai" $W
+
+        if [ ${#all[@]} -eq 0 ]; then
+            echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Belum ada akun. Pilih '➕ Buat Akun Baru' di bawah.${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
+        fi
+
+        local inner=$((W - 4))
+        for i in "${!items[@]}"; do
+            local label="${items[$i]}"
+            local itype="${item_types[$i]}"
+
+            # Skip separator sebagai item navigasi (tapi tetap tampil)
+            if [ "$itype" == "sep" ]; then
+                echo -e "${C_CYAN}${BOX_ML}$(hline $BOX_H $((W-2)))${BOX_MR}${C_RESET}"
+                continue
+            fi
+
+            local clean=$(echo -e "$label" | sed 's/\x1b\[[0-9;]*m//g')
+            local pad=$((inner - ${#clean}))
+            [ $pad -lt 0 ] && pad=0
+
+            if [ "$i" -eq "$selected" ]; then
+                if [ "$itype" == "account" ]; then
+                    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_GREEN}${C_BOLD} ▶ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
+                else
+                    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_YELLOW}${C_BOLD} ❯ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
+                fi
+            else
+                if [ "$itype" == "account" ]; then
+                    echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${label}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
+                else
+                    echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${C_DIM}${label}${C_RESET}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
+                fi
+            fi
+        done
+
         draw_box_bottom $W
         echo ""
+        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Login/Select   q Quit${C_RESET}"
+        echo -e " ${C_DIM}${C_GRAY}● OK  ◑ Expiring  ⚠ Warning  ✗ Expired  ○ No Token${C_RESET}"
 
-        # Menu
-        draw_box "Menu" $W
-        render_menu options $selected $W
-        draw_box_bottom $W
-        echo ""
-
-        # Footer hint
-        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Select   q Quit${C_RESET}"
-
-        # Input
+        # Skip separator saat navigasi
         local k=$(read_key)
         case $k in
-            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
-            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
-            ENTER) break ;;
-            QUIT)  tput cnorm; tput rmcup; exit 0 ;;
+            UP)
+                ((selected--))
+                [ $selected -lt 0 ] && selected=$((${#items[@]}-1))
+                # Skip separator
+                while [ "${item_types[$selected]}" == "sep" ]; do
+                    ((selected--))
+                    [ $selected -lt 0 ] && selected=$((${#items[@]}-1))
+                done
+                ;;
+            DOWN)
+                ((selected++))
+                [ $selected -ge ${#items[@]} ] && selected=0
+                # Skip separator
+                while [ "${item_types[$selected]}" == "sep" ]; do
+                    ((selected++))
+                    [ $selected -ge ${#items[@]} ] && selected=0
+                done
+                ;;
+            ENTER|RIGHT)
+                local sel_type="${item_types[$selected]}"
+                local sel_name="${item_names[$selected]}"
+                if [ "$sel_type" == "account" ]; then
+                    # Switch symlink lalu launch agy
+                    rm -f "$ORIGINAL"
+                    ln -sf "$BASE/agy-$sel_name" "$ORIGINAL"
+                    tput cnorm; tput rmcup
+                    echo -e "${C_GREEN}▶ Launching agy sebagai: ${C_BOLD}$sel_name${C_RESET}"
+                    exec agy "$@"
+                elif [ "$sel_type" == "action" ]; then
+                    case "$sel_name" in
+                        new)    tput cnorm; create_account ;;
+                        delete) tput cnorm; delete_account ;;
+                        quit)   tput cnorm; tput rmcup; exit 0 ;;
+                    esac
+                fi
+                ;;
+            QUIT) tput cnorm; tput rmcup; exit 0 ;;
         esac
     done
-
-    tput cnorm
-    case $selected in
-        0) switch_account ;;
-        1) create_account ;;
-        2) list_accounts ;;
-        3) delete_account ;;
-        4) tput rmcup; exit 0 ;;
-    esac
 }
+
 
 # ════════════════════════════════════════════════════════════════
 # ── SWITCH ACCOUNT ──────────────────────────────────────────────
