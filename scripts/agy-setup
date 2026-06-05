@@ -13,6 +13,21 @@ BASE="$HOME/.gemini"
 SHARED="$BASE/agy-shared"
 ORIGINAL="$BASE/antigravity-cli"
 
+# Deteksi sudo
+if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
+    SUDO="sudo"
+else
+    SUDO=""
+fi
+
+# Tentukan direktori bin
+if [ -w "/usr/local/bin" ] || [ -n "$SUDO" ]; then
+    BIN_DIR="/usr/local/bin"
+else
+    BIN_DIR="$HOME/.local/bin"
+    mkdir -p "$BIN_DIR"
+fi
+
 # File/folder yang di-SHARE antar semua akun
 SHARED_ITEMS=(
     "history.jsonl"
@@ -103,22 +118,23 @@ ln -sf "$ACCT_DIR" "$ORIGINAL"
 echo -e "  ${GREEN}✔${NC} $ORIGINAL → agy-$FIRST_ACCOUNT"
 
 # Buat wrapper command
-WRAPPER="/usr/local/bin/agy-$FIRST_ACCOUNT"
-cat > "$WRAPPER" <<EOF
+WRAPPER="$BIN_DIR/agy-$FIRST_ACCOUNT"
+TMP_WRAPPER=$(mktemp)
+cat > "$TMP_WRAPPER" <<EOF
 #!/bin/bash
 # Wrapper akun: $FIRST_ACCOUNT
 ACCT_DIR="$ACCT_DIR"
+ORIGINAL="$ORIGINAL"
 
 # Arahkan antigravity-cli ke direktori akun ini
-if [ -L "$ORIGINAL" ] || [ -d "$ORIGINAL" ]; then
-    rm -f "$ORIGINAL"
-fi
-ln -sf "\$ACCT_DIR" "$ORIGINAL"
+rm -f "\$ORIGINAL"
+ln -sf "\$ACCT_DIR" "\$ORIGINAL"
 
 exec agy "\$@"
 EOF
-chmod +x "$WRAPPER"
-echo -e "  ${GREEN}✔${NC} Perintah dibuat: agy-$FIRST_ACCOUNT"
+$SUDO mv "$TMP_WRAPPER" "$WRAPPER"
+$SUDO chmod +x "$WRAPPER"
+echo -e "  ${GREEN}✔${NC} Perintah dibuat: agy-$FIRST_ACCOUNT (→ $BIN_DIR/)"
 
 echo ""
 echo -e "${GREEN}================================================${NC}"
@@ -127,5 +143,5 @@ echo -e "${GREEN}================================================${NC}"
 echo ""
 echo -e "Selanjutnya:"
 echo -e "  Tambah akun baru : ${YELLOW}agy-new <nama_akun>${NC}"
-echo -e "  Manager interaktif: ${YELLOW}antiz${NC}"
+echo -e "  Manager interaktif: ${YELLOW}agyauth${NC}"
 echo -e "  Jalankan akun    : ${YELLOW}agy-$FIRST_ACCOUNT${NC}"
