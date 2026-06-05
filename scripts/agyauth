@@ -585,8 +585,143 @@ delete_account() {
 }
 
 # ════════════════════════════════════════════════════════════════
+# ── HELP ────────────────────────────────────────────────────────
+# ════════════════════════════════════════════════════════════════
+show_help() {
+    local W=66
+    echo ""
+    echo -e "${C_CYAN}${BOX_TL}$(hline $BOX_H $((W-2)))${BOX_TR}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $((W-2)) '')${C_CYAN}${BOX_V}${C_RESET}"
+    center "${C_BOLD}${C_CYAN}⚡ agyauth${C_RESET}${C_BOLD} — Antigravity Multi-Account Manager${C_RESET}" $W
+    center "${C_DIM}${C_GRAY}https://github.com/galgunawan/agyauth${C_RESET}" $W
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $((W-2)) '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_BL}$(hline $BOX_H $((W-2)))${BOX_BR}${C_RESET}"
+    echo ""
+
+    # Usage
+    echo -e " ${C_BOLD}${C_WHITE}USAGE${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth${C_RESET}                  Buka TUI account manager"
+    echo -e "   ${C_CYAN}agyauth${C_RESET} ${C_YELLOW}[options]${C_RESET}        Lihat di bawah"
+    echo ""
+
+    # Options
+    echo -e " ${C_BOLD}${C_WHITE}OPTIONS${C_RESET}"
+    echo -e "   ${C_YELLOW}-h, --help${C_RESET}             Tampilkan help ini"
+    echo -e "   ${C_YELLOW}-l, --list${C_RESET}             List semua akun tersimpan"
+    echo -e "   ${C_YELLOW}-s, --switch <nama>${C_RESET}    Switch ke akun tanpa membuka TUI"
+    echo -e "   ${C_YELLOW}-a, --active${C_RESET}           Tampilkan akun yang sedang aktif"
+    echo -e "   ${C_YELLOW}-v, --version${C_RESET}          Tampilkan versi agyauth"
+    echo ""
+
+    # Commands
+    echo -e " ${C_BOLD}${C_WHITE}RELATED COMMANDS${C_RESET}"
+    echo -e "   ${C_CYAN}agy-setup${C_RESET}               Setup awal multi-account (jalankan sekali)"
+    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}<nama>${C_RESET}          Tambah akun baru dengan isolated ID"
+    echo -e "   ${C_CYAN}agy-<nama>${C_RESET}              Switch & langsung jalankan akun tertentu"
+    echo ""
+
+    # Examples
+    echo -e " ${C_BOLD}${C_WHITE}EXAMPLES${C_RESET}"
+    echo -e "   ${C_DIM}# Setup awal (jalankan sekali)${C_RESET}"
+    echo -e "   ${C_CYAN}agy-setup${C_RESET}"
+    echo ""
+    echo -e "   ${C_DIM}# Buka TUI manager${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth${C_RESET}"
+    echo ""
+    echo -e "   ${C_DIM}# Tambah akun baru${C_RESET}"
+    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}akun2${C_RESET}"
+    echo ""
+    echo -e "   ${C_DIM}# Switch ke akun langsung tanpa TUI${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth --switch${C_RESET} ${C_YELLOW}utama${C_RESET}"
+    echo ""
+    echo -e "   ${C_DIM}# Launch akun langsung (shortcut)${C_RESET}"
+    echo -e "   ${C_CYAN}agy-utama${C_RESET}"
+    echo -e "   ${C_CYAN}agy-akun2${C_RESET}"
+    echo ""
+
+    # Account dir structure
+    echo -e " ${C_BOLD}${C_WHITE}DIRECTORY STRUCTURE${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/agy-shared/${C_RESET}   ${C_GRAY}← shared: history, settings, knowledge${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/agy-<name>/${C_RESET}   ${C_GRAY}← per akun: token + installation_id unik${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/antigravity-cli${C_RESET} ${C_GRAY}← symlink → akun aktif${C_RESET}"
+    echo ""
+}
+
+# ════════════════════════════════════════════════════════════════
 # ── ENTRY POINT ─────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════
+
+# Parse arguments
+case "${1:-}" in
+    -h|--help|help)
+        show_help
+        exit 0
+        ;;
+    -v|--version|version)
+        echo -e "${C_CYAN}agyauth${C_RESET} v1.0.0 — https://github.com/galgunawan/agyauth"
+        exit 0
+        ;;
+    -a|--active|active)
+        ACTIVE=$(get_active_account)
+        ACCT_DIR="$BASE/agy-$ACTIVE"
+        EXP=$(get_expiry_plain "$ACCT_DIR")
+        IID=$(get_install_id "$ACCT_DIR")
+        echo -e "${C_GREEN}● ${C_BOLD}$ACTIVE${C_RESET}  ID:${IID}  Exp:${EXP}"
+        exit 0
+        ;;
+    -l|--list|list)
+        echo ""
+        echo -e " ${C_BOLD}Daftar Akun Antigravity:${C_RESET}"
+        echo ""
+        ACTIVE=$(get_active_account)
+        for dir in "$BASE"/agy-*/; do
+            name=$(basename "$dir" | sed 's/^agy-//')
+            [ "$name" = "shared" ] && continue
+            exp=$(get_expiry_plain "$dir")
+            iid=$(get_install_id "$dir")
+            status=$(get_token_status "$dir")
+            badge=""
+            case $status in
+                ok)       badge="${C_GREEN}●${C_RESET}" ;;
+                expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
+                warning)  badge="${C_RED}⚠${C_RESET}" ;;
+                expired)  badge="${C_RED}✗${C_RESET}" ;;
+                *)        badge="${C_GRAY}○${C_RESET}" ;;
+            esac
+            mark=""
+            [ "$name" = "$ACTIVE" ] && mark=" ${C_CYAN}← aktif${C_RESET}"
+            echo -e "   $badge ${C_BOLD}$(printf '%-15s' "$name")${C_RESET}  ID:${iid}  ${exp}${mark}"
+        done
+        echo ""
+        exit 0
+        ;;
+    -s|--switch|switch)
+        TARGET="${2:-}"
+        if [ -z "$TARGET" ]; then
+            echo -e "${C_RED}✗ Nama akun diperlukan. Contoh: agyauth --switch utama${C_RESET}"
+            exit 1
+        fi
+        if [ ! -d "$BASE/agy-$TARGET" ]; then
+            echo -e "${C_RED}✗ Akun '$TARGET' tidak ditemukan.${C_RESET}"
+            echo -e "  Gunakan ${C_CYAN}agyauth --list${C_RESET} untuk melihat akun yang tersedia."
+            exit 1
+        fi
+        rm -f "$ORIGINAL"
+        ln -sf "$BASE/agy-$TARGET" "$ORIGINAL"
+        echo -e "${C_GREEN}✔ Switched ke akun: ${C_BOLD}$TARGET${C_RESET}"
+        exit 0
+        ;;
+    "")
+        # Tidak ada argument → buka TUI
+        ;;
+    *)
+        echo -e "${C_RED}✗ Opsi tidak dikenal: $1${C_RESET}"
+        echo -e "  Gunakan ${C_CYAN}agyauth --help${C_RESET} untuk melihat semua opsi."
+        exit 1
+        ;;
+esac
+
+# Cek setup
 if [ ! -d "$SHARED" ]; then
     tput cnorm
     echo ""
