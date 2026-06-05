@@ -57,12 +57,59 @@ echo -e "${GREEN}   Antigravity Multi-Account Setup (Symlink)   ${NC}"
 echo -e "${CYAN}================================================${NC}"
 echo ""
 
+# Fungsi buat wrapper untuk satu akun
+create_wrapper() {
+    local acc_name="$1"
+    local acc_dir="$BASE/agy-$acc_name"
+    local wrapper="$BIN_DIR/agy-$acc_name"
+    local tmp=$(mktemp)
+    cat > "$tmp" <<EOF
+#!/bin/bash
+ACCT_DIR="$acc_dir"
+ORIGINAL="$ORIGINAL"
+rm -f "\$ORIGINAL"
+ln -sf "\$ACCT_DIR" "\$ORIGINAL"
+exec agy "\$@"
+EOF
+    $SUDO mv "$tmp" "$wrapper"
+    $SUDO chmod +x "$wrapper"
+}
+
 # Cek apakah sudah pernah di-setup
 if [ -d "$SHARED" ]; then
     echo -e "${YELLOW}Folder shared sudah ada di: $SHARED${NC}"
-    echo -e "Jalankan 'agy-new <nama_akun>' untuk menambah akun baru."
+    echo ""
+    echo -e "Memperbaiki wrapper commands yang hilang..."
+    FIXED=0
+    for dir in "$BASE"/agy-*/; do
+        acc=$(basename "$dir" | sed 's/^agy-//')
+        [ "$acc" = "shared" ] && continue
+        wrapper="$BIN_DIR/agy-$acc"
+        if [ ! -f "$wrapper" ]; then
+            create_wrapper "$acc"
+            echo -e "  ${GREEN}✔${NC} Wrapper dibuat: agy-$acc (→ $BIN_DIR/)"
+            FIXED=$((FIXED + 1))
+        else
+            echo -e "  ${CYAN}·${NC} agy-$acc sudah ada, skip"
+        fi
+    done
+    echo ""
+    if [ "$FIXED" -gt 0 ]; then
+        echo -e "${GREEN}✔ $FIXED wrapper berhasil diperbaiki!${NC}"
+    else
+        echo -e "${CYAN}Semua wrapper sudah lengkap. Tidak ada yang perlu diperbaiki.${NC}"
+    fi
+    echo ""
+    echo -e "Perintah tersedia:"
+    for dir in "$BASE"/agy-*/; do
+        acc=$(basename "$dir" | sed 's/^agy-//')
+        [ "$acc" = "shared" ] && continue
+        echo -e "  ${YELLOW}agy-$acc${NC}"
+    done
+    echo -e "  ${YELLOW}agyauth${NC}  ← manager interaktif"
     exit 0
 fi
+
 
 # Cek apakah folder original ada
 if [ ! -d "$ORIGINAL" ]; then
