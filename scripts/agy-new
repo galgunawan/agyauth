@@ -72,10 +72,18 @@ echo -e "  ${GREEN}✔${NC} installation_id baru: $NEW_ID"
 
 # Buat symlink ke shared
 for item in "${SHARED_ITEMS[@]}"; do
-    if [ -e "$SHARED/$item" ]; then
-        ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
-        echo -e "  ${CYAN}🔗${NC} Symlink: $item → agy-shared/$item"
+    if [ ! -e "$SHARED/$item" ]; then
+        case "$item" in
+            history.jsonl|settings.json|keybindings.json)
+                touch "$SHARED/$item"
+                ;;
+            *)
+                mkdir -p "$SHARED/$item"
+                ;;
+        esac
     fi
+    ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
+    echo -e "  ${CYAN}🔗${NC} Symlink: $item → agy-shared/$item"
 done
 
 # Buat wrapper command

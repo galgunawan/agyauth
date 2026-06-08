@@ -149,12 +149,24 @@ for item in "${UNIQUE_ITEMS[@]}"; do
     fi
 done
 
+# Pastikan semua item shared ada (agar symlink tidak broken dan berfungsi saat dibuat)
+for item in "${SHARED_ITEMS[@]}"; do
+    if [ ! -e "$SHARED/$item" ]; then
+        case "$item" in
+            history.jsonl|settings.json|keybindings.json)
+                touch "$SHARED/$item"
+                ;;
+            *)
+                mkdir -p "$SHARED/$item"
+                ;;
+        esac
+    fi
+done
+
 # Buat symlink dari akun pertama ke shared
 for item in "${SHARED_ITEMS[@]}"; do
-    if [ -e "$SHARED/$item" ]; then
-        ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
-        echo -e "  ${CYAN}🔗${NC} Symlink: agy-$FIRST_ACCOUNT/$item → agy-shared/$item"
-    fi
+    ln -sf "$SHARED/$item" "$ACCT_DIR/$item"
+    echo -e "  ${CYAN}🔗${NC} Symlink: agy-$FIRST_ACCOUNT/$item → agy-shared/$item"
 done
 
 # Backup dan ganti folder original dengan symlink ke akun pertama

@@ -261,7 +261,14 @@ show_main_menu() {
         draw_box "Login sebagai" $W
 
         if [ ${#all[@]} -eq 0 ]; then
-            echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Belum ada akun. Pilih '➕ Buat Akun Baru' di bawah.${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
+            local msg="Belum ada akun. Pilih '➕ Buat Akun Baru' di bawah."
+            local msg_clean=$(echo -e "$msg" | sed 's/\x1b\[[0-9;]*m//g')
+            local msg_len=${#msg_clean}
+            # Adjust by subtracting 1 because the emoji ➕ takes up 2 terminal columns but counts as 1 char in bash length
+            local pad_len=$((W - 4 - msg_len - 1))
+            [ $pad_len -lt 0 ] && pad_len=0
+            local pad_spaces=$(printf '%*s' $pad_len '')
+            echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}${msg}${C_RESET}${pad_spaces} ${C_CYAN}${BOX_V}${C_RESET}"
         fi
 
         local inner=$((W - 4))
@@ -579,8 +586,17 @@ delete_account() {
             echo ""
             read -p " Yakin? (y/n): " confirm
             if [[ "$confirm" == "y" ]]; then
+                # Deteksi sudo dan bin_dir
+                local _SUDO="" _BIN=""
+                if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
+                    _SUDO="sudo"; _BIN="/usr/local/bin"
+                elif [ -w "/usr/local/bin" ]; then
+                    _SUDO=""; _BIN="/usr/local/bin"
+                else
+                    _SUDO=""; _BIN="$HOME/.local/bin"
+                fi
                 rm -rf "$BASE/agy-$target"
-                rm -f "/usr/local/bin/agy-$target"
+                $_SUDO rm -f "$_BIN/agy-$target"
                 echo -e "\n ${C_GREEN}✔ Akun '${target}' berhasil dihapus.${C_RESET}"
             else
                 echo -e " ${C_GRAY}Dibatalkan.${C_RESET}"
