@@ -5,7 +5,7 @@ BASE="$HOME/.gemini"
 SHARED="$BASE/agy-shared"
 ORIGINAL="$BASE/antigravity-cli"
 
-# ── Warna ──────────────────────────────────────────────────────
+# ── Colors ──────────────────────────────────────────────────────
 C_RESET='\033[0m'
 C_BOLD='\033[1m'
 C_DIM='\033[2m'
@@ -25,15 +25,15 @@ BOX_TL='╭'; BOX_TR='╮'; BOX_BL='╰'; BOX_BR='╯'
 BOX_H='─'; BOX_V='│'; BOX_ML='├'; BOX_MR='┤'
 SEP='·'
 
-# ── Ukuran terminal ─────────────────────────────────────────────
+# ── Terminal Size ───────────────────────────────────────────────
 TERM_W=$(tput cols)
 TERM_H=$(tput lines)
 
-# Track apakah TUI sudah diaktifkan (agar trap tidak menghapus output non-TUI)
+# Track if TUI is active (to prevent trap from cleaning non-TUI output)
 TUI_ACTIVE=0
 trap 'tput cnorm; [ $TUI_ACTIVE -eq 1 ] && tput rmcup; exit' INT TERM EXIT
 
-# ── Helper: buat baris horizontal ──────────────────────────────
+# ── Helper: draw horizontal line ───────────────────────────────
 hline() {
     local char="${1:-$BOX_H}" len="${2:-$TERM_W}"
     printf '%*s' "$len" | tr ' ' "$char"
@@ -67,7 +67,7 @@ draw_box_bottom() {
     echo -e "${C_CYAN}${BOX_BL}$(hline $BOX_H $inner)${BOX_BR}${C_RESET}"
 }
 
-# ── Helper: format baris dalam box ─────────────────────────────
+# ── Helper: format row inside box ──────────────────────────────
 box_row() {
     local label="$1" value="$2" width="${3:-60}"
     local inner=$((width - 2))
@@ -86,7 +86,7 @@ box_empty() {
     echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $inner '')${C_CYAN}${BOX_V}${C_RESET}"
 }
 
-# ── Ambil data akun ─────────────────────────────────────────────
+# ── Get Account Data ────────────────────────────────────────────
 get_expiry() {
     local file="$1/antigravity-oauth-token"
     [ ! -f "$file" ] && echo "${C_RED}No Token${C_RESET}" && return
@@ -148,7 +148,7 @@ get_all_accounts() {
     done
 }
 
-# ── Render menu navigasi ────────────────────────────────────────
+# ── Render Navigation Menu ──────────────────────────────────────
 render_menu() {
     local -n opts=$1
     local sel=$2
@@ -169,7 +169,7 @@ render_menu() {
     done
 }
 
-# ── Read key ────────────────────────────────────────────────────
+# ── Read Keyboard Input ─────────────────────────────────────────
 read_key() {
     local key
     read -rsn1 key
@@ -202,10 +202,10 @@ show_main_menu() {
         local all=($(get_all_accounts))
         local acc_count=${#all[@]}
 
-        # Bangun daftar item: akun dulu, lalu actions
+        # Build items list: accounts first, then actions
         local items=()
-        local item_types=()   # "account" atau "action"
-        local item_names=()   # nama akun atau nama action
+        local item_types=()   # "account" or "action"
+        local item_names=()   # account name or action name
 
         for name in "${all[@]}"; do
             local exp=$(get_expiry_plain "$BASE/agy-$name")
@@ -220,30 +220,30 @@ show_main_menu() {
                 *)       badge="${C_GRAY}○${C_RESET}" ;;
             esac
             local active_mark=""
-            [ "$name" == "$ACTIVE" ] && active_mark=" ${C_CYAN}[aktif]${C_RESET}"
+            [ "$name" == "$ACTIVE" ] && active_mark=" ${C_CYAN}[active]${C_RESET}"
             items+=("$badge ${C_BOLD}${name}${C_RESET}${active_mark}  ${C_GRAY}ID:${iid}  ${exp}${C_RESET}")
             item_types+=("account")
             item_names+=("$name")
         done
 
-        # Separator action
+        # Action separator
         items+=("${C_GRAY}────────────────────────────────────${C_RESET}")
         item_types+=("sep")
         item_names+=("")
 
-        items+=("➕  Buat Akun Baru")
+        items+=("➕  Create New Account")
         item_types+=("action")
         item_names+=("new")
 
-        items+=("✏️   Rename Akun")
+        items+=("✏️   Rename Account")
         item_types+=("action")
         item_names+=("rename")
 
-        items+=("🗑️   Hapus Akun")
+        items+=("🗑️   Delete Account")
         item_types+=("action")
         item_names+=("delete")
 
-        items+=("❌  Keluar")
+        items+=("❌  Exit")
         item_types+=("action")
         item_names+=("quit")
 
@@ -253,15 +253,15 @@ show_main_menu() {
         # Header
         echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
         center "${C_BOLD}${C_CYAN}⚡ ANTIGRAVITY ACCOUNT MANAGER${C_RESET}" $W
-        center "${C_DIM}${C_GRAY}Pilih akun untuk login · agyauth${C_RESET}" $W
+        center "${C_DIM}${C_GRAY}Select account to login · agyauth${C_RESET}" $W
         echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
         echo ""
 
-        # Panel Login sebagai
-        draw_box "Login sebagai" $W
+        # Accounts panel
+        draw_box "Accounts" $W
 
         if [ ${#all[@]} -eq 0 ]; then
-            local msg="Belum ada akun. Pilih '➕ Buat Akun Baru' di bawah."
+            local msg="No accounts found. Select '➕ Create New Account' below."
             local msg_clean=$(echo -e "$msg" | sed 's/\x1b\[[0-9;]*m//g')
             local msg_len=${#msg_clean}
             # Adjust by subtracting 1 because the emoji ➕ takes up 2 terminal columns but counts as 1 char in bash length
@@ -276,7 +276,7 @@ show_main_menu() {
             local label="${items[$i]}"
             local itype="${item_types[$i]}"
 
-            # Skip separator sebagai item navigasi (tapi tetap tampil)
+            # Skip separator for navigation (but still draw it)
             if [ "$itype" == "sep" ]; then
                 echo -e "${C_CYAN}${BOX_ML}$(hline $BOX_H $((W-2)))${BOX_MR}${C_RESET}"
                 continue
@@ -303,10 +303,10 @@ show_main_menu() {
 
         draw_box_bottom $W
         echo ""
-        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Login/Select   q Quit${C_RESET}"
+        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Login/Select   q Exit${C_RESET}"
         echo -e " ${C_DIM}${C_GRAY}● OK  ◑ Expiring  ⚠ Warning  ✗ Expired  ○ No Token${C_RESET}"
 
-        # Skip separator saat navigasi
+        # Skip separator during navigation
         local k=$(read_key)
         case $k in
             UP)
@@ -331,11 +331,11 @@ show_main_menu() {
                 local sel_type="${item_types[$selected]}"
                 local sel_name="${item_names[$selected]}"
                 if [ "$sel_type" == "account" ]; then
-                    # Switch symlink lalu launch agy
+                    # Switch symlink then launch agy
                     rm -f "$ORIGINAL"
                     ln -sf "$BASE/agy-$sel_name" "$ORIGINAL"
                     tput cnorm; tput rmcup
-                    echo -e "${C_GREEN}▶ Launching agy sebagai: ${C_BOLD}$sel_name${C_RESET}"
+                    echo -e "${C_GREEN}▶ Launching agy as: ${C_BOLD}$sel_name${C_RESET}"
                     exec agy "$@"
                 elif [ "$sel_type" == "action" ]; then
                     case "$sel_name" in
@@ -360,12 +360,12 @@ switch_account() {
     local all=($(get_all_accounts))
     if [ ${#all[@]} -eq 0 ]; then
         tput cup 0 0; tput ed
-        draw_box "Switch Akun" $W
+        draw_box "Switch Account" $W
         box_empty $W
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_RED}Belum ada akun. Jalankan 'agy-setup' dulu.${C_RESET}  ${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_RED}No accounts found. Please run 'agy-setup' first.${C_RESET}  ${C_CYAN}${BOX_V}${C_RESET}"
         box_empty $W
         draw_box_bottom $W
-        read -p " Tekan Enter..."
+        read -p " Press Enter..."
         return
     fi
 
@@ -389,13 +389,13 @@ switch_account() {
             options+=("$badge ${name}  ID:${iid}  ${exp}")
         fi
     done
-    options+=("${C_GRAY}← Kembali${C_RESET}")
+    options+=("${C_GRAY}← Back${C_RESET}")
 
     local selected=0
     while true; do
         tput cup 0 0; tput ed
 
-        draw_box "Switch Akun — Pilih Akun Target" $W
+        draw_box "Switch Account — Select Target Account" $W
         box_empty $W
         render_menu options $selected $W
         box_empty $W
@@ -421,65 +421,61 @@ switch_account() {
 
         tput cup 0 0; tput ed
         echo ""
-        center "${C_GREEN}${C_BOLD}✔ Berhasil Switch!${C_RESET}" $W
+        center "${C_GREEN}${C_BOLD}✔ Switch Successful!${C_RESET}" $W
         echo ""
         draw_box "Status" $W
-        box_row "Akun Aktif"     "${C_GREEN}${C_BOLD}$target${C_RESET}" $W
+        box_row "Active Account" "${C_GREEN}${C_BOLD}$target${C_RESET}" $W
         box_row "Install ID"     "${C_YELLOW}$(get_install_id "$BASE/agy-$target")...${C_RESET}" $W
-        box_row "History Shared" "${C_GREEN}✓ Tetap terbagi${C_RESET}" $W
-        box_row "Config Shared"  "${C_GREEN}✓ Tetap terbagi${C_RESET}" $W
-        box_row "Isolation"      "${C_GREEN}✓ Token & ID unik${C_RESET}" $W
+        box_row "History Shared" "${C_GREEN}✓ Shared${C_RESET}" $W
+        box_row "Config Shared"  "${C_GREEN}✓ Shared${C_RESET}" $W
+        box_row "Isolation"      "${C_GREEN}✓ Unique Token & ID${C_RESET}" $W
         box_empty $W
         draw_box_bottom $W
         echo ""
-        read -p " Tekan Enter untuk kembali..."
+        read -p " Press Enter to go back..."
     fi
 }
 
-# ════════════════════════════════════════════════════════════════
 # ── CREATE ACCOUNT ──────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
 create_account() {
     local W=62
     tput cup 0 0; tput ed; tput cnorm
 
     echo ""
-    draw_box "Buat Akun Baru" $W
+    draw_box "Create New Account" $W
     box_empty $W
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Setiap akun akan memiliki:${C_RESET}$(printf '%*s' 25 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} installation_id unik (baru & random)$(printf '%*s' 12 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Token OAuth terpisah$(printf '%*s' 28 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_CYAN}🔗${C_RESET} History & config terbagi via symlink$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Each account will have:${C_RESET}$(printf '%*s' 25 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Unique installation_id (new & random)$(printf '%*s' 12 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Separate OAuth token$(printf '%*s' 28 '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_CYAN}🔗${C_RESET} Shared history & config via symlink$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
     box_empty $W
     draw_box_bottom $W
     echo ""
-    read -p " Nama akun baru (misal: akun2, kantor): " name
+    read -p " New account name (e.g., account2, office): " name
     if [ -n "$name" ]; then
         echo ""
         agy-new "$name"
         echo ""
-        echo -e " ${C_GREEN}${C_BOLD}✔ Selesai!${C_RESET} Jalankan ${C_YELLOW}agy-${name}${C_RESET} untuk login ke akun ini."
+        echo -e " ${C_GREEN}${C_BOLD}✔ Done!${C_RESET} Run ${C_YELLOW}agy-${name}${C_RESET} to log in to this account."
     else
-        echo -e " ${C_RED}Dibatalkan.${C_RESET}"
+        echo -e " ${C_RED}Cancelled.${C_RESET}"
     fi
     echo ""
-    read -p " Tekan Enter untuk kembali..."
+    read -p " Press Enter to go back..."
 }
 
-# ════════════════════════════════════════════════════════════════
-# ── LIST ACCOUNTS ───────────────────────────────────════════════
-# ════════════════════════════════════════════════════════════════
+# ── LIST ACCOUNTS ───────────────────────────────────────────────
 list_accounts() {
     local W=72
     local ACTIVE=$(get_active_account)
     tput cup 0 0; tput ed; tput cnorm
 
     echo ""
-    draw_box "Semua Akun Antigravity" $W
+    draw_box "All Antigravity Accounts" $W
     box_empty $W
 
-    # Header kolom
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_BOLD}${C_WHITE}$(printf '%-12s %-10s %-10s %-8s %s' 'NAMA' 'INSTALL ID' 'STATUS' 'TOKEN' 'EXPIRY')${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
+    # Table Header
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_BOLD}${C_WHITE}$(printf '%-12s %-10s %-10s %-8s %s' 'NAME' 'INSTALL ID' 'STATUS' 'TOKEN' 'EXPIRY')${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
     echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
 
     local count=0
@@ -490,7 +486,7 @@ list_accounts() {
         local badge="" status_text=""
 
         case $status in
-            ok)      badge="${C_GREEN}●${C_RESET}"; status_text="${C_GREEN}Active ${C_RESET}" ;;
+            ok)      badge="${C_GREEN}●${C_RESET}"; status_text="${C_GREEN}Active  ${C_RESET}" ;;
             expiring) badge="${C_YELLOW}◑${C_RESET}"; status_text="${C_YELLOW}Expiring${C_RESET}" ;;
             warning) badge="${C_RED}⚠${C_RESET}"; status_text="${C_RED}Warning ${C_RESET}" ;;
             expired) badge="${C_RED}✗${C_RESET}"; status_text="${C_RED}Expired ${C_RESET}" ;;
@@ -505,23 +501,21 @@ list_accounts() {
     done
 
     if [ $count -eq 0 ]; then
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Belum ada akun. Jalankan 'agy-setup'.${C_RESET}$(printf '%*s' 22 '')${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}No accounts found. Please run 'agy-setup'.${C_RESET}$(printf '%*s' 22 '')${C_CYAN}${BOX_V}${C_RESET}"
     fi
 
     echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Total: ${C_WHITE}${count} akun${C_RESET}$(printf '%*s' $((W-14)) '')${C_CYAN}${BOX_V}${C_RESET}"
+    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Total: ${C_WHITE}${count} account(s)${C_RESET}$(printf '%*s' $((W-19)) '')${C_CYAN}${BOX_V}${C_RESET}"
     echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Shared: ${C_BLUE}~/.gemini/agy-shared/ ${C_GRAY}(history, config, knowledge)${C_RESET}$(printf '%*s' 3 '')${C_CYAN}${BOX_V}${C_RESET}"
     box_empty $W
     draw_box_bottom $W
     echo ""
-    echo -e " ${C_DIM}${C_GRAY}◀ = Akun aktif saat ini${C_RESET}"
+    echo -e " ${C_DIM}${C_GRAY}◀ = Currently active account${C_RESET}"
     echo ""
-    read -p " Tekan Enter untuk kembali..."
+    read -p " Press Enter to go back..."
 }
 
-# ════════════════════════════════════════════════════════════════
 # ── DELETE ACCOUNT ──────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
 delete_account() {
     local W=66
     local ACTIVE=$(get_active_account)
@@ -529,8 +523,8 @@ delete_account() {
 
     if [ ${#all[@]} -eq 0 ]; then
         tput cup 0 0; tput ed
-        echo -e "\n ${C_RED}Belum ada akun.${C_RESET}\n"
-        read -p " Tekan Enter..."; return
+        echo -e "\n ${C_RED}No accounts found.${C_RESET}\n"
+        read -p " Press Enter..."; return
     fi
 
     local options=()
@@ -538,21 +532,21 @@ delete_account() {
         local exp=$(get_expiry_plain "$BASE/agy-$name")
         local iid=$(get_install_id "$BASE/agy-$name")
         if [ "$name" == "$ACTIVE" ]; then
-            options+=("${C_GRAY}⊘ ${name} [AKTIF — tidak bisa dihapus]${C_RESET}")
+            options+=("${C_GRAY}⊘ ${name} [ACTIVE — cannot be deleted]${C_RESET}")
         else
             options+=("${C_RED}✗${C_RESET} ${name}  ID:${iid}  ${exp}")
         fi
     done
-    options+=("${C_GRAY}← Kembali${C_RESET}")
+    options+=("${C_GRAY}← Back${C_RESET}")
 
     local selected=0
     while true; do
         tput cup 0 0; tput ed
 
-        draw_box "Hapus Akun" $W
+        draw_box "Delete Account" $W
         box_empty $W
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_YELLOW}⚠ Token & installation_id akan dihapus permanen.${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓ History & config di agy-shared aman.${C_RESET}$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_YELLOW}⚠ Token & installation_id will be permanently deleted.${C_RESET}$(printf '%*s' 2 '')${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓ History & config in agy-shared are safe.${C_RESET}$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
         box_empty $W
         echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
         render_menu options $selected $W
@@ -574,19 +568,19 @@ delete_account() {
     if [ "$selected" -lt "${#all[@]}" ]; then
         local target="${all[$selected]}"
         if [ "$target" == "$ACTIVE" ]; then
-            echo -e "\n ${C_RED}Tidak bisa menghapus akun yang sedang aktif!${C_RESET}\n"
+            echo -e "\n ${C_RED}Cannot delete the currently active account!${C_RESET}\n"
         else
             echo ""
-            draw_box "Konfirmasi Hapus" $W
-            box_row "Akun"   "${C_RED}${C_BOLD}$target${C_RESET}" $W
-            box_row "Action" "${C_RED}Hapus token & installation_id${C_RESET}" $W
-            box_row "Safe"   "${C_GREEN}History & config tetap aman${C_RESET}" $W
+            draw_box "Confirm Delete" $W
+            box_row "Account" "${C_RED}${C_BOLD}$target${C_RESET}" $W
+            box_row "Action"  "${C_RED}Delete token & installation_id${C_RESET}" $W
+            box_row "Safe"    "${C_GREEN}History & config remain safe${C_RESET}" $W
             box_empty $W
             draw_box_bottom $W
             echo ""
-            read -p " Yakin? (y/n): " confirm
+            read -p " Are you sure? (y/n): " confirm
             if [[ "$confirm" == "y" ]]; then
-                # Deteksi sudo dan bin_dir
+                # Detect sudo and bin_dir
                 local _SUDO="" _BIN=""
                 if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
                     _SUDO="sudo"; _BIN="/usr/local/bin"
@@ -597,51 +591,49 @@ delete_account() {
                 fi
                 rm -rf "$BASE/agy-$target"
                 $_SUDO rm -f "$_BIN/agy-$target"
-                echo -e "\n ${C_GREEN}✔ Akun '${target}' berhasil dihapus.${C_RESET}"
+                echo -e "\n ${C_GREEN}✔ Account '${target}' successfully deleted.${C_RESET}"
             else
-                echo -e " ${C_GRAY}Dibatalkan.${C_RESET}"
+                echo -e " ${C_GRAY}Cancelled.${C_RESET}"
             fi
         fi
         echo ""
-        read -p " Tekan Enter untuk kembali..."
+        read -p " Press Enter to go back..."
     fi
 }
 
-# ════════════════════════════════════════════════════════════════
 # ── RENAME ACCOUNT ──────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
 rename_account() {
     local W=66
     local ACTIVE=$(get_active_account)
     local all=($(get_all_accounts))
 
     if [ ${#all[@]} -eq 0 ]; then
-        echo -e "\n ${C_RED}Belum ada akun.${C_RESET}\n"
-        read -p " Tekan Enter..."; return
+        echo -e "\n ${C_RED}No accounts found.${C_RESET}\n"
+        read -p " Press Enter..."; return
     fi
 
     local options=()
     for name in "${all[@]}"; do
         local iid=$(get_install_id "$BASE/agy-$name")
         if [ "$name" == "$ACTIVE" ]; then
-            options+=("${C_BOLD}${name}${C_RESET} ${C_CYAN}[aktif]${C_RESET}  ID:${iid}")
+            options+=("${C_BOLD}${name}${C_RESET} ${C_CYAN}[active]${C_RESET}  ID:${iid}")
         else
             options+=("${name}  ID:${iid}")
         fi
     done
-    options+=("${C_GRAY}← Kembali${C_RESET}")
+    options+=("${C_GRAY}← Back${C_RESET}")
 
     local selected=0
     while true; do
         tput cup 0 0; tput ed
 
-        draw_box "✏️  Rename Akun — Pilih Akun" $W
+        draw_box "✏️  Rename Account — Select Account" $W
         box_empty $W
         render_menu options $selected $W
         box_empty $W
         draw_box_bottom $W
         echo ""
-        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Pilih   q Cancel${C_RESET}"
+        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
 
         local k=$(read_key)
         case $k in
@@ -660,27 +652,27 @@ rename_account() {
 
     echo ""
     draw_box "Rename: $OLD_NAME" $W
-    box_row "Akun saat ini" "${C_BOLD}${C_YELLOW}$OLD_NAME${C_RESET}" $W
+    box_row "Current Name" "${C_BOLD}${C_YELLOW}$OLD_NAME${C_RESET}" $W
     box_empty $W
     draw_box_bottom $W
     echo ""
-    read -p " Nama baru: " NEW_NAME
+    read -p " New name: " NEW_NAME
 
-    # Validasi
+    # Validation
     if [ -z "$NEW_NAME" ]; then
-        echo -e " ${C_RED}✗ Nama tidak boleh kosong. Dibatalkan.${C_RESET}"
-        read -p " Tekan Enter..."; return
+        echo -e " ${C_RED}✗ Name cannot be empty. Cancelled.${C_RESET}"
+        read -p " Press Enter..."; return
     fi
     if [ "$NEW_NAME" == "$OLD_NAME" ]; then
-        echo -e " ${C_YELLOW}⚠ Nama sama, tidak ada perubahan.${C_RESET}"
-        read -p " Tekan Enter..."; return
+        echo -e " ${C_YELLOW}⚠ Name is the same, no changes made.${C_RESET}"
+        read -p " Press Enter..."; return
     fi
     if [ -d "$BASE/agy-$NEW_NAME" ]; then
-        echo -e " ${C_RED}✗ Nama '$NEW_NAME' sudah dipakai oleh akun lain.${C_RESET}"
-        read -p " Tekan Enter..."; return
+        echo -e " ${C_RED}✗ Name '$NEW_NAME' is already used by another account.${C_RESET}"
+        read -p " Press Enter..."; return
     fi
 
-    # Deteksi sudo
+    # Detect sudo
     if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
         SUDO="sudo"; BIN_DIR="/usr/local/bin"
     elif [ -w "/usr/local/bin" ]; then
@@ -689,18 +681,18 @@ rename_account() {
         SUDO=""; BIN_DIR="$HOME/.local/bin"
     fi
 
-    # 1. Rename direktori
+    # 1. Rename directory
     mv "$OLD_DIR" "$BASE/agy-$NEW_NAME"
-    echo -e " ${C_GREEN}✔${C_RESET} Direktori: agy-${OLD_NAME} → agy-${NEW_NAME}"
+    echo -e " ${C_GREEN}✔${C_RESET} Directory: agy-${OLD_NAME} → agy-${NEW_NAME}"
 
-    # 2. Update symlink aktif jika perlu
+    # 2. Update active symlink if necessary
     if [ "$OLD_NAME" == "$ACTIVE" ]; then
         rm -f "$ORIGINAL"
         ln -sf "$BASE/agy-$NEW_NAME" "$ORIGINAL"
-        echo -e " ${C_GREEN}✔${C_RESET} Symlink aktif diperbarui → agy-${NEW_NAME}"
+        echo -e " ${C_GREEN}✔${C_RESET} Active symlink updated → agy-${NEW_NAME}"
     fi
 
-    # 3. Hapus wrapper lama, buat wrapper baru
+    # 3. Re-create wrapper command
     $SUDO rm -f "$BIN_DIR/agy-$OLD_NAME"
     local TMP=$(mktemp)
     cat > "$TMP" <<EOF
@@ -716,14 +708,12 @@ EOF
     echo -e " ${C_GREEN}✔${C_RESET} Wrapper: agy-${OLD_NAME} → agy-${NEW_NAME}"
 
     echo ""
-    echo -e " ${C_GREEN}${C_BOLD}✔ Rename berhasil!${C_RESET}  ${C_YELLOW}${OLD_NAME}${C_RESET} → ${C_GREEN}${NEW_NAME}${C_RESET}"
+    echo -e " ${C_GREEN}${C_BOLD}✔ Rename successful!${C_RESET}  ${C_YELLOW}${OLD_NAME}${C_RESET} → ${C_GREEN}${NEW_NAME}${C_RESET}"
     echo ""
-    read -p " Tekan Enter untuk kembali..."
+    read -p " Press Enter to go back..."
 }
 
-# ════════════════════════════════════════════════════════════════
 # ── HELP ────────────────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
 show_help() {
     local W=66
     echo ""
@@ -737,64 +727,62 @@ show_help() {
 
     # Usage
     echo -e " ${C_BOLD}${C_WHITE}USAGE${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth${C_RESET}                       Buka TUI account manager"
-    echo -e "   ${C_CYAN}agyauth${C_RESET} ${C_YELLOW}<flag> [argumen]${C_RESET}   Lihat OPTIONS di bawah"
+    echo -e "   ${C_CYAN}agyauth${C_RESET}                       Open interactive TUI manager"
+    echo -e "   ${C_CYAN}agyauth${C_RESET} ${C_YELLOW}<flag> [arguments]${C_RESET}   See OPTIONS below"
     echo ""
 
     # Options
     echo -e " ${C_BOLD}${C_WHITE}OPTIONS${C_RESET}"
-    echo -e "   ${C_YELLOW}-h,  --help${C_RESET}                  Tampilkan help ini"
-    echo -e "   ${C_YELLOW}-v,  --version${C_RESET}               Tampilkan versi agyauth"
-    echo -e "   ${C_YELLOW}-l,  --list${C_RESET}                  List semua akun + status token"
-    echo -e "   ${C_YELLOW}-a,  --active${C_RESET}                Tampilkan akun yang sedang aktif"
-    echo -e "   ${C_YELLOW}-s,  --switch${C_RESET} ${C_WHITE}<nama>${C_RESET}        Switch ke akun tanpa membuka TUI"
-    echo -e "   ${C_YELLOW}-rn, --rename${C_RESET} ${C_WHITE}<lama> <baru>${C_RESET}  Rename akun tanpa membuka TUI"
+    echo -e "   ${C_YELLOW}-h,  --help${C_RESET}                  Show this help message"
+    echo -e "   ${C_YELLOW}-v,  --version${C_RESET}               Show version information"
+    echo -e "   ${C_YELLOW}-l,  --list${C_RESET}                  List all accounts and token status"
+    echo -e "   ${C_YELLOW}-a,  --active${C_RESET}                Show the currently active account"
+    echo -e "   ${C_YELLOW}-s,  --switch${C_RESET} ${C_WHITE}<name>${C_RESET}        Switch to an account without opening TUI"
+    echo -e "   ${C_YELLOW}-rn, --rename${C_RESET} ${C_WHITE}<old> <new>${C_RESET}  Rename an account without opening TUI"
     echo ""
 
     # Related Commands
     echo -e " ${C_BOLD}${C_WHITE}RELATED COMMANDS${C_RESET}"
-    echo -e "   ${C_CYAN}agy-setup${C_RESET}                    Setup awal multi-account (jalankan sekali)"
-    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}<nama>${C_RESET}              Tambah akun baru dengan isolated ID"
-    echo -e "   ${C_CYAN}agy-<nama>${C_RESET}                   Switch & langsung jalankan akun tertentu"
+    echo -e "   ${C_CYAN}agy-setup${C_RESET}                    First-time multi-account setup (run once)"
+    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}<name>${C_RESET}              Add a new account with isolated ID"
+    echo -e "   ${C_CYAN}agy-<name>${C_RESET}                   Switch and run a specific account directly"
     echo ""
 
     # Examples
     echo -e " ${C_BOLD}${C_WHITE}EXAMPLES${C_RESET}"
-    echo -e "   ${C_DIM}# Setup awal — jalankan sekali di server baru${C_RESET}"
+    echo -e "   ${C_DIM}# First-time setup — run once on a new server${C_RESET}"
     echo -e "   ${C_CYAN}agy-setup${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Tambah akun baru${C_RESET}"
-    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}akun2${C_RESET}"
+    echo -e "   ${C_DIM}# Create a new account${C_RESET}"
+    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}account2${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Buka TUI — pilih akun lalu langsung login${C_RESET}"
+    echo -e "   ${C_DIM}# Open interactive TUI manager — select account and log in${C_RESET}"
     echo -e "   ${C_CYAN}agyauth${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Switch akun cepat tanpa buka TUI${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth -s${C_RESET} ${C_YELLOW}utama${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth --switch${C_RESET} ${C_YELLOW}akun2${C_RESET}"
+    echo -e "   ${C_DIM}# Quickly switch account without TUI${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth -s${C_RESET} ${C_YELLOW}main${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth --switch${C_RESET} ${C_YELLOW}account2${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Rename akun${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth --rename${C_RESET} ${C_YELLOW}namajeleq namabenar${C_RESET}"
+    echo -e "   ${C_DIM}# Rename an account${C_RESET}"
+    echo -e "   ${C_CYAN}agyauth --rename${C_RESET} ${C_YELLOW}oldname newname${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Shortcut langsung jalankan akun tanpa TUI${C_RESET}"
-    echo -e "   ${C_CYAN}agy-utama${C_RESET}        ${C_GRAY}(switch + jalankan agy sebagai utama)${C_RESET}"
-    echo -e "   ${C_CYAN}agy-akun2${C_RESET}        ${C_GRAY}(switch + jalankan agy sebagai akun2)${C_RESET}"
+    echo -e "   ${C_DIM}# Run account directly without TUI${C_RESET}"
+    echo -e "   ${C_CYAN}agy-main${C_RESET}          ${C_GRAY}(switch + launch agy as main)${C_RESET}"
+    echo -e "   ${C_CYAN}agy-account2${C_RESET}      ${C_GRAY}(switch + launch agy as account2)${C_RESET}"
     echo ""
-    echo -e "   ${C_DIM}# Cek siapa yang aktif${C_RESET}"
+    echo -e "   ${C_DIM}# Check which account is active${C_RESET}"
     echo -e "   ${C_CYAN}agyauth -a${C_RESET}"
     echo ""
 
     # Directory structure
     echo -e " ${C_BOLD}${C_WHITE}DIRECTORY STRUCTURE${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/agy-shared/${C_RESET}      ${C_GRAY}← dibagi semua akun (history, settings, knowledge)${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/agy-<nama>/${C_RESET}      ${C_GRAY}← tiap akun: token + installation_id unik${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/antigravity-cli${C_RESET}  ${C_GRAY}← symlink → akun yang sedang aktif${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/agy-shared/${C_RESET}      ${C_GRAY}← shared by all accounts (history, settings, knowledge)${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/agy-<name>/${C_RESET}      ${C_GRAY}← per account: unique token + installation_id${C_RESET}"
+    echo -e "   ${C_BLUE}~/.gemini/antigravity-cli${C_RESET}  ${C_GRAY}← symlink → currently active account${C_RESET}"
     echo ""
 }
 
-# ════════════════════════════════════════════════════════════════
 # ── ENTRY POINT ─────────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
 
 # Parse arguments
 case "${1:-}" in
@@ -816,7 +804,7 @@ case "${1:-}" in
         ;;
     -l|--list|list)
         echo ""
-        echo -e " ${C_BOLD}Daftar Akun Antigravity:${C_RESET}"
+        echo -e " ${C_BOLD}Antigravity Accounts List:${C_RESET}"
         echo ""
         ACTIVE=$(get_active_account)
         for dir in "$BASE"/agy-*/; do
@@ -834,7 +822,7 @@ case "${1:-}" in
                 *)        badge="${C_GRAY}○${C_RESET}" ;;
             esac
             mark=""
-            [ "$name" = "$ACTIVE" ] && mark=" ${C_CYAN}← aktif${C_RESET}"
+            [ "$name" = "$ACTIVE" ] && mark=" ${C_CYAN}← active${C_RESET}"
             echo -e "   $badge ${C_BOLD}$(printf '%-15s' "$name")${C_RESET}  ID:${iid}  ${exp}${mark}"
         done
         echo ""
@@ -843,31 +831,31 @@ case "${1:-}" in
     -s|--switch|switch)
         TARGET="${2:-}"
         if [ -z "$TARGET" ]; then
-            echo -e "${C_RED}✗ Nama akun diperlukan. Contoh: agyauth --switch utama${C_RESET}"
+            echo -e "${C_RED}✗ Account name is required. Example: agyauth --switch main${C_RESET}"
             exit 1
         fi
         if [ ! -d "$BASE/agy-$TARGET" ]; then
-            echo -e "${C_RED}✗ Akun '$TARGET' tidak ditemukan.${C_RESET}"
-            echo -e "  Gunakan ${C_CYAN}agyauth --list${C_RESET} untuk melihat akun yang tersedia."
+            echo -e "${C_RED}✗ Account '$TARGET' not found.${C_RESET}"
+            echo -e "  Use ${C_CYAN}agyauth --list${C_RESET} to view available accounts."
             exit 1
         fi
         rm -f "$ORIGINAL"
         ln -sf "$BASE/agy-$TARGET" "$ORIGINAL"
-        echo -e "${C_GREEN}✔ Switched ke akun: ${C_BOLD}$TARGET${C_RESET}"
+        echo -e "${C_GREEN}✔ Switched to account: ${C_BOLD}$TARGET${C_RESET}"
         exit 0
         ;;
     -rn|--rename|rename)
         OLD="${2:-}"; NEW="${3:-}"
         if [ -z "$OLD" ] || [ -z "$NEW" ]; then
-            echo -e "${C_RED}✗ Diperlukan 2 argumen. Contoh: agyauth --rename namalama namabaru${C_RESET}"
+            echo -e "${C_RED}✗ 2 arguments required. Example: agyauth --rename oldname newname${C_RESET}"
             exit 1
         fi
         if [ ! -d "$BASE/agy-$OLD" ]; then
-            echo -e "${C_RED}✗ Akun '$OLD' tidak ditemukan.${C_RESET}"
+            echo -e "${C_RED}✗ Account '$OLD' not found.${C_RESET}"
             exit 1
         fi
         if [ -d "$BASE/agy-$NEW" ]; then
-            echo -e "${C_RED}✗ Nama '$NEW' sudah dipakai.${C_RESET}"
+            echo -e "${C_RED}✗ Name '$NEW' is already in use.${C_RESET}"
             exit 1
         fi
         if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
@@ -878,12 +866,12 @@ case "${1:-}" in
             _SUDO=""; _BIN="$HOME/.local/bin"
         fi
         mv "$BASE/agy-$OLD" "$BASE/agy-$NEW"
-        echo -e " ${C_GREEN}✔${C_RESET} Direktori: agy-${OLD} → agy-${NEW}"
+        echo -e " ${C_GREEN}✔${C_RESET} Directory: agy-${OLD} → agy-${NEW}"
         ACTIVE=$(get_active_account)
         if [ "$OLD" == "$ACTIVE" ]; then
             rm -f "$ORIGINAL"
             ln -sf "$BASE/agy-$NEW" "$ORIGINAL"
-            echo -e " ${C_GREEN}✔${C_RESET} Symlink aktif diperbarui → agy-${NEW}"
+            echo -e " ${C_GREEN}✔${C_RESET} Active symlink updated → agy-${NEW}"
         fi
         $_SUDO rm -f "$_BIN/agy-$OLD"
         _TMP=$(mktemp)
@@ -898,28 +886,28 @@ EOF
         $_SUDO mv "$_TMP" "$_BIN/agy-$NEW"
         $_SUDO chmod +x "$_BIN/agy-$NEW"
         echo -e " ${C_GREEN}✔${C_RESET} Wrapper: agy-${OLD} → agy-${NEW}"
-        echo -e "${C_GREEN}✔ Rename selesai: ${C_BOLD}${OLD}${C_RESET} ${C_GREEN}→ ${C_BOLD}${NEW}${C_RESET}"
+        echo -e "${C_GREEN}✔ Rename complete: ${C_BOLD}${OLD}${C_RESET} ${C_GREEN}→ ${C_BOLD}${NEW}${C_RESET}"
         exit 0
         ;;
     "")
-        # Tidak ada argument → buka TUI
+        # No arguments → open TUI
         ;;
     *)
-        echo -e "${C_RED}✗ Opsi tidak dikenal: $1${C_RESET}"
-        echo -e "  Gunakan ${C_CYAN}agyauth --help${C_RESET} untuk melihat semua opsi."
+        echo -e "${C_RED}✗ Unknown option: $1${C_RESET}"
+        echo -e "  Use ${C_CYAN}agyauth --help${C_RESET} to view all options."
         exit 1
         ;;
 esac
 
-# Cek setup
+# Check setup status
 if [ ! -d "$SHARED" ]; then
     tput cnorm
     echo ""
-    echo -e " ${C_YELLOW}${C_BOLD}⚠ Setup belum dijalankan!${C_RESET}"
+    echo -e " ${C_YELLOW}${C_BOLD}⚠ Setup has not been run yet!${C_RESET}"
     echo ""
-    echo -e " Jalankan terlebih dahulu: ${C_GREEN}agy-setup${C_RESET}"
+    echo -e " Please run this first: ${C_GREEN}agy-setup${C_RESET}"
     echo ""
-    read -p " Mau jalankan sekarang? (y/n): " confirm
+    read -p " Would you like to run it now? (y/n): " confirm
     [[ "$confirm" == "y" ]] && agy-setup
     exit 0
 fi
