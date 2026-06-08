@@ -24,6 +24,17 @@ C_BG_HDR='\033[48;5;234m'
 TUI_ACTIVE=0
 trap 'tput cnorm; [ $TUI_ACTIVE -eq 1 ] && tput rmcup; exit' INT TERM EXIT
 
+# ── Global Caches ───────────────────────────────────────────────
+ACTIVE_ACCOUNT=""
+ACTIVE_EXP=""
+ACTIVE_IID=""
+
+ACCTS_NAMES=()
+ACCTS_EXPS=()
+ACCTS_IIDS=()
+ACCTS_STATUS_TXT=()
+ACCTS_STATUS_COLOR=()
+
 # ── Center Text Helper ─────────────────────────────────────────
 center() {
     local text="$1" width="${2:-80}"
@@ -71,6 +82,50 @@ get_all_accounts() {
     done
 }
 
+# ── Cache Management ────────────────────────────────────────────
+load_accounts_data() {
+    ACCTS_NAMES=()
+    ACCTS_EXPS=()
+    ACCTS_IIDS=()
+    ACCTS_STATUS_TXT=()
+    ACCTS_STATUS_COLOR=()
+    
+    local all=($(get_all_accounts))
+    for name in "${all[@]}"; do
+        ACCTS_NAMES+=("$name")
+        
+        local exp=$(get_expiry_plain "$BASE/agy-$name")
+        ACCTS_EXPS+=("$exp")
+        
+        local iid=$(get_install_id "$BASE/agy-$name")
+        ACCTS_IIDS+=("$iid")
+        
+        local status=$(get_token_status "$BASE/agy-$name")
+        local status_text=""
+        local color=""
+        case $status in
+            ok)       status_text="OK"      ; color=$C_GREEN ;;
+            expiring) status_text="Expiring"; color=$C_YELLOW ;;
+            warning)  status_text="Warning" ; color=$C_RED ;;
+            expired)  status_text="Expired" ; color=$C_RED ;;
+            *)        status_text="No Token"; color=$C_GRAY ;;
+        esac
+        ACCTS_STATUS_TXT+=("$status_text")
+        ACCTS_STATUS_COLOR+=("$color")
+    done
+}
+
+load_active_account_details() {
+    ACTIVE_ACCOUNT=$(get_active_account)
+    if [ "$ACTIVE_ACCOUNT" != "unknown" ]; then
+        ACTIVE_EXP=$(get_expiry_plain "$BASE/agy-$ACTIVE_ACCOUNT")
+        ACTIVE_IID=$(get_install_id "$BASE/agy-$ACTIVE_ACCOUNT")
+    else
+        ACTIVE_EXP=""
+        ACTIVE_IID=""
+    fi
+}
+
 # ── Read Keyboard Input ─────────────────────────────────────────
 read_key() {
     local key
@@ -95,20 +150,22 @@ read_key() {
 # ════════════════════════════════════════════════════════════════
 show_main_menu() {
     local selected=0
+    
+    # Load data once initially
+    load_accounts_data
+    load_active_account_details
 
     while true; do
-        local ACTIVE=$(get_active_account)
-        local all=($(get_all_accounts))
-        local acc_count=${#all[@]}
+        local acc_count=${#ACCTS_NAMES[@]}
 
         # Build items list: accounts first, then actions
         local items=()
-        local item_types=()   # "account", "action", "sep"
+        local item_types=()   # "account", "action"
         local item_names=()   # account name or action name ("new", "rename", "delete", "quit")
         local item_keys=()    # hotkeys ('1'-'9', 'n', 'r', 'd', 'q')
 
-        for i in "${!all[@]}"; do
-            local name="${all[$i]}"
+        for i in "${!ACCTS_NAMES[@]}"; do
+            local name="${ACCTS_NAMES[$i]}"
             local key_num=$((i + 1))
             items+=("$name")
             item_types+=("account")
@@ -140,15 +197,14 @@ show_main_menu() {
         item_names+=("quit")
         item_keys+=("q")
 
+        # Overwrite display fast from top-left (no clear-flash)
         tput cup 0 0
         tput ed
 
         echo -e "${C_BOLD}${C_CYAN}ANTIGRAVITY ACCOUNT MANAGER${C_RESET}"
         echo -e "${C_GRAY}------------------------------------------------------------${C_RESET}"
-        if [ "$ACTIVE" != "unknown" ]; then
-            local exp=$(get_expiry_plain "$BASE/agy-$ACTIVE")
-            local iid=$(get_install_id "$BASE/agy-$ACTIVE")
-            echo -e "Active account: ${C_GREEN}${C_BOLD}$ACTIVE${C_RESET} (ID: $iid, Exp: $exp)"
+        if [ "$ACTIVE_ACCOUNT" != "unknown" ]; then
+            echo -e "Active account: ${C_GREEN}${C_BOLD}$ACTIVE_ACCOUNT${C_RESET} (ID: $ACTIVE_IID, Exp: $ACTIVE_EXP)"
         else
             echo -e "Active account: ${C_RED}None${C_RESET}"
         fi
@@ -160,24 +216,16 @@ show_main_menu() {
             echo -e "  (No accounts found. Press 'n' to create one)"
         fi
 
-        # Draw accounts
-        for i in "${!all[@]}"; do
-            local name="${all[$i]}"
-            local exp=$(get_expiry_plain "$BASE/agy-$name")
-            local iid=$(get_install_id "$BASE/agy-$name")
-            local status=$(get_token_status "$BASE/agy-$name")
-            local status_text=""
-            local color=""
-            case $status in
-                ok)       status_text="OK"      ; color=$C_GREEN ;;
-                expiring) status_text="Expiring"; color=$C_YELLOW ;;
-                warning)  status_text="Warning" ; color=$C_RED ;;
-                expired)  status_text="Expired" ; color=$C_RED ;;
-                *)        status_text="No Token"; color=$C_GRAY ;;
-            esac
+        # Draw accounts from cache
+        for i in "${!ACCTS_NAMES[@]}"; do
+            local name="${ACCTS_NAMES[$i]}"
+            local exp="${ACCTS_EXPS[$i]}"
+            local iid="${ACCTS_IIDS[$i]}"
+            local status_text="${ACCTS_STATUS_TXT[$i]}"
+            local color="${ACCTS_STATUS_COLOR[$i]}"
 
             local prefix="  "
-            [ "$name" == "$ACTIVE" ] && prefix="* "
+            [ "$name" == "$ACTIVE_ACCOUNT" ] && prefix="* "
             
             local shortcut_str="   "
             if [ $((i+1)) -le 9 ]; then
@@ -227,6 +275,9 @@ show_main_menu() {
                 local sel_type="${item_types[$i]}"
                 local sel_name="${item_names[$i]}"
                 execute_menu_item "$sel_type" "$sel_name"
+                # Reload data in case it changed
+                load_accounts_data
+                load_active_account_details
                 handled=1
                 break
             fi
@@ -252,6 +303,9 @@ show_main_menu() {
                     local sel_type="${item_types[$selected]}"
                     local sel_name="${item_names[$selected]}"
                     execute_menu_item "$sel_type" "$sel_name"
+                    # Reload data in case it changed
+                    load_accounts_data
+                    load_active_account_details
                     ;;
                 QUIT)
                     tput cnorm; tput rmcup; exit 0
