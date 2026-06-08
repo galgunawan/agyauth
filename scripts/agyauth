@@ -1,5 +1,5 @@
 #!/bin/bash
-# agyauth v2 — Antigravity Multi-Account Manager (Premium TUI)
+# agyauth v2 — Antigravity Multi-Account Manager (Simple TUI)
 
 BASE="$HOME/.gemini"
 SHARED="$BASE/agy-shared"
@@ -20,96 +20,19 @@ C_GRAY='\033[38;5;240m'
 C_BG_SEL='\033[48;5;236m'
 C_BG_HDR='\033[48;5;234m'
 
-# ── Box Drawing ─────────────────────────────────────────────────
-BOX_TL='╭'; BOX_TR='╮'; BOX_BL='╰'; BOX_BR='╯'
-BOX_H='─'; BOX_V='│'; BOX_ML='├'; BOX_MR='┤'
-SEP='·'
-
-# ── Terminal Size ───────────────────────────────────────────────
-TERM_W=$(tput cols)
-TERM_H=$(tput lines)
-
-# Track if TUI is active (to prevent trap from cleaning non-TUI output)
+# Track if TUI is active
 TUI_ACTIVE=0
 trap 'tput cnorm; [ $TUI_ACTIVE -eq 1 ] && tput rmcup; exit' INT TERM EXIT
 
-# ── Helper: draw horizontal line ───────────────────────────────
-hline() {
-    local char="${1:-$BOX_H}" len="${2:-$TERM_W}"
-    printf '%*s' "$len" | tr ' ' "$char"
-}
-
-# ── Helper: center text ─────────────────────────────────────────
+# ── Center Text Helper ─────────────────────────────────────────
 center() {
-    local text="$1" width="${2:-$TERM_W}"
+    local text="$1" width="${2:-80}"
     local clean=$(echo -e "$text" | sed 's/\x1b\[[0-9;]*m//g')
     local pad=$(( (width - ${#clean}) / 2 ))
     printf '%*s%b%s\n' "$pad" '' "$text" "$C_RESET"
 }
 
-# ── Helper: box ─────────────────────────────────────────────────
-draw_box() {
-    local title="$1" width="${2:-60}"
-    local inner=$((width - 2))
-    echo -e "${C_CYAN}${BOX_TL}$(hline $BOX_H $inner)${BOX_TR}${C_RESET}"
-    if [ -n "$title" ]; then
-        local tlen=${#title}
-        local lpad=$(( (inner - tlen - 2) / 2 ))
-        local rpad=$(( inner - tlen - 2 - lpad ))
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $lpad '') ${C_BOLD}${C_WHITE}${title}${C_RESET} $(printf '%*s' $rpad '')${C_CYAN}${BOX_V}${C_RESET}"
-        echo -e "${C_CYAN}${BOX_ML}$(hline $BOX_H $inner)${BOX_MR}${C_RESET}"
-    fi
-}
-
-draw_box_bottom() {
-    local width="${1:-60}"
-    local inner=$((width - 2))
-    echo -e "${C_CYAN}${BOX_BL}$(hline $BOX_H $inner)${BOX_BR}${C_RESET}"
-}
-
-# ── Helper: format row inside box ──────────────────────────────
-box_row() {
-    local label="$1" value="$2" width="${3:-60}"
-    local inner=$((width - 2))
-    local llen=${#label}
-    local clean_val=$(echo -e "$value" | sed 's/\x1b\[[0-9;]*m//g')
-    local vlen=${#clean_val}
-    local dots_len=$((inner - llen - vlen - 4))
-    [ $dots_len -lt 1 ] && dots_len=1
-    local dots=$(printf '%*s' $dots_len | tr ' ' "$SEP")
-    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_GRAY}${label}${C_RESET} ${C_DIM}${C_GRAY}${dots}${C_RESET} ${value} ${C_CYAN}${BOX_V}${C_RESET}"
-}
-
-box_empty() {
-    local width="${1:-60}"
-    local inner=$((width - 2))
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $inner '')${C_CYAN}${BOX_V}${C_RESET}"
-}
-
 # ── Get Account Data ────────────────────────────────────────────
-get_expiry() {
-    local file="$1/antigravity-oauth-token"
-    [ ! -f "$file" ] && echo "${C_RED}No Token${C_RESET}" && return
-    local raw=$(jq -r '.token.expiry // empty' "$file" 2>/dev/null)
-    [ -z "$raw" ] && echo "${C_GRAY}No Expiry${C_RESET}" && return
-
-    local exp_ts=$(date -d "$raw" +%s 2>/dev/null)
-    local now_ts=$(date +%s)
-    local diff=$((exp_ts - now_ts))
-
-    local formatted=$(TZ='Asia/Jakarta' date -d "$raw" '+%d %b %Y %H:%M WIB' 2>/dev/null)
-
-    if [ $diff -lt 0 ]; then
-        echo "${C_RED}✗ Expired${C_RESET}"
-    elif [ $diff -lt 1800 ]; then
-        echo "${C_RED}⚠ $formatted${C_RESET}"
-    elif [ $diff -lt 7200 ]; then
-        echo "${C_YELLOW}◑ $formatted${C_RESET}"
-    else
-        echo "${C_GREEN}✓ $formatted${C_RESET}"
-    fi
-}
-
 get_expiry_plain() {
     local file="$1/antigravity-oauth-token"
     [ ! -f "$file" ] && echo "No Token" && return
@@ -148,27 +71,6 @@ get_all_accounts() {
     done
 }
 
-# ── Render Navigation Menu ──────────────────────────────────────
-render_menu() {
-    local -n opts=$1
-    local sel=$2
-    local width="${3:-60}"
-
-    for i in "${!opts[@]}"; do
-        local label="${opts[$i]}"
-        local inner=$((width - 4))
-        local clean=$(echo -e "$label" | sed 's/\x1b\[[0-9;]*m//g')
-        local pad=$((inner - ${#clean}))
-        [ $pad -lt 0 ] && pad=0
-
-        if [ "$i" -eq "$sel" ]; then
-            echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_GREEN}${C_BOLD} ❯ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
-        else
-            echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${C_DIM}${label}${C_RESET}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
-        fi
-    done
-}
-
 # ── Read Keyboard Input ─────────────────────────────────────────
 read_key() {
     local key
@@ -183,10 +85,8 @@ read_key() {
             *) echo "ESC" ;;
         esac
     elif [[ $key == "" ]]; then echo "ENTER"
-    elif [[ $key == "q" ]] || [[ $key == "Q" ]]; then echo "QUIT"
-    elif [[ $key == "j" ]]; then echo "DOWN"
-    elif [[ $key == "k" ]]; then echo "UP"
-    else echo "OTHER"
+    else
+        echo "$key"
     fi
 }
 
@@ -194,7 +94,6 @@ read_key() {
 # ── MAIN MENU ───────────────────────────────────────────────────
 # ════════════════════════════════════════════════════════════════
 show_main_menu() {
-    local W=66
     local selected=0
 
     while true; do
@@ -204,383 +103,252 @@ show_main_menu() {
 
         # Build items list: accounts first, then actions
         local items=()
-        local item_types=()   # "account" or "action"
-        local item_names=()   # account name or action name
+        local item_types=()   # "account", "action", "sep"
+        local item_names=()   # account name or action name ("new", "rename", "delete", "quit")
+        local item_keys=()    # hotkeys ('1'-'9', 'n', 'r', 'd', 'q')
 
-        for name in "${all[@]}"; do
-            local exp=$(get_expiry_plain "$BASE/agy-$name")
-            local iid=$(get_install_id "$BASE/agy-$name")
-            local status=$(get_token_status "$BASE/agy-$name")
-            local badge=""
-            case $status in
-                ok)      badge="${C_GREEN}●${C_RESET}" ;;
-                expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
-                warning) badge="${C_RED}⚠${C_RESET}" ;;
-                expired) badge="${C_RED}✗${C_RESET}" ;;
-                *)       badge="${C_GRAY}○${C_RESET}" ;;
-            esac
-            local active_mark=""
-            [ "$name" == "$ACTIVE" ] && active_mark=" ${C_CYAN}[active]${C_RESET}"
-            items+=("$badge ${C_BOLD}${name}${C_RESET}${active_mark}  ${C_GRAY}ID:${iid}  ${exp}${C_RESET}")
+        for i in "${!all[@]}"; do
+            local name="${all[$i]}"
+            local key_num=$((i + 1))
+            items+=("$name")
             item_types+=("account")
             item_names+=("$name")
+            if [ $key_num -le 9 ]; then
+                item_keys+=("$key_num")
+            else
+                item_keys+=("")
+            fi
         done
 
-        # Action separator
-        items+=("${C_GRAY}────────────────────────────────────${C_RESET}")
-        item_types+=("sep")
-        item_names+=("")
-
-        items+=("➕  Create New Account")
+        items+=("Create New Account")
         item_types+=("action")
         item_names+=("new")
+        item_keys+=("n")
 
-        items+=("✏️   Rename Account")
+        items+=("Rename Account")
         item_types+=("action")
         item_names+=("rename")
+        item_keys+=("r")
 
-        items+=("🗑️   Delete Account")
+        items+=("Delete Account")
         item_types+=("action")
         item_names+=("delete")
+        item_keys+=("d")
 
-        items+=("❌  Exit")
+        items+=("Exit")
         item_types+=("action")
         item_names+=("quit")
+        item_keys+=("q")
 
         tput cup 0 0
         tput ed
 
-        # Header
-        echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
-        center "${C_BOLD}${C_CYAN}⚡ ANTIGRAVITY ACCOUNT MANAGER${C_RESET}" $W
-        center "${C_DIM}${C_GRAY}Select account to login · agyauth${C_RESET}" $W
-        echo -e "${C_BG_HDR}$(printf '%*s' $W '')${C_RESET}"
+        echo -e "${C_BOLD}${C_CYAN}ANTIGRAVITY ACCOUNT MANAGER${C_RESET}"
+        echo -e "${C_GRAY}------------------------------------------------------------${C_RESET}"
+        if [ "$ACTIVE" != "unknown" ]; then
+            local exp=$(get_expiry_plain "$BASE/agy-$ACTIVE")
+            local iid=$(get_install_id "$BASE/agy-$ACTIVE")
+            echo -e "Active account: ${C_GREEN}${C_BOLD}$ACTIVE${C_RESET} (ID: $iid, Exp: $exp)"
+        else
+            echo -e "Active account: ${C_RED}None${C_RESET}"
+        fi
+        echo -e "${C_GRAY}------------------------------------------------------------${C_RESET}"
         echo ""
 
-        # Accounts panel
-        draw_box "Accounts" $W
-
-        if [ ${#all[@]} -eq 0 ]; then
-            local msg="No accounts found. Select '➕ Create New Account' below."
-            local msg_clean=$(echo -e "$msg" | sed 's/\x1b\[[0-9;]*m//g')
-            local msg_len=${#msg_clean}
-            # Adjust by subtracting 1 because the emoji ➕ takes up 2 terminal columns but counts as 1 char in bash length
-            local pad_len=$((W - 4 - msg_len - 1))
-            [ $pad_len -lt 0 ] && pad_len=0
-            local pad_spaces=$(printf '%*s' $pad_len '')
-            echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}${msg}${C_RESET}${pad_spaces} ${C_CYAN}${BOX_V}${C_RESET}"
+        echo -e "${C_BOLD}Accounts:${C_RESET}"
+        if [ $acc_count -eq 0 ]; then
+            echo -e "  (No accounts found. Press 'n' to create one)"
         fi
 
-        local inner=$((W - 4))
-        for i in "${!items[@]}"; do
-            local label="${items[$i]}"
-            local itype="${item_types[$i]}"
+        # Draw accounts
+        for i in "${!all[@]}"; do
+            local name="${all[$i]}"
+            local exp=$(get_expiry_plain "$BASE/agy-$name")
+            local iid=$(get_install_id "$BASE/agy-$name")
+            local status=$(get_token_status "$BASE/agy-$name")
+            local status_text=""
+            local color=""
+            case $status in
+                ok)       status_text="OK"      ; color=$C_GREEN ;;
+                expiring) status_text="Expiring"; color=$C_YELLOW ;;
+                warning)  status_text="Warning" ; color=$C_RED ;;
+                expired)  status_text="Expired" ; color=$C_RED ;;
+                *)        status_text="No Token"; color=$C_GRAY ;;
+            esac
 
-            # Skip separator for navigation (but still draw it)
-            if [ "$itype" == "sep" ]; then
-                echo -e "${C_CYAN}${BOX_ML}$(hline $BOX_H $((W-2)))${BOX_MR}${C_RESET}"
-                continue
+            local prefix="  "
+            [ "$name" == "$ACTIVE" ] && prefix="* "
+            
+            local shortcut_str="   "
+            if [ $((i+1)) -le 9 ]; then
+                shortcut_str="[$((i+1))]"
             fi
 
-            local clean=$(echo -e "$label" | sed 's/\x1b\[[0-9;]*m//g')
-            local pad=$((inner - ${#clean}))
-            [ $pad -lt 0 ] && pad=0
+            local line="${prefix}${shortcut_str} ${C_BOLD}${name}${C_RESET} (ID: ${iid}, Exp: ${exp}, Status: ${color}${status_text}${C_RESET})"
 
             if [ "$i" -eq "$selected" ]; then
-                if [ "$itype" == "account" ]; then
-                    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_GREEN}${C_BOLD} ▶ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
-                else
-                    echo -e "${C_CYAN}${BOX_V}${C_RESET} ${C_BG_SEL}${C_YELLOW}${C_BOLD} ❯ ${label}$(printf '%*s' $pad '') ${C_RESET} ${C_CYAN}${BOX_V}${C_RESET}"
-                fi
+                echo -e " > $line"
             else
-                if [ "$itype" == "account" ]; then
-                    echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${label}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
-                else
-                    echo -e "${C_CYAN}${BOX_V}${C_RESET}   ${C_DIM}${label}${C_RESET}$(printf '%*s' $((pad+1)) '')${C_CYAN}${BOX_V}${C_RESET}"
-                fi
+                echo -e "   $line"
             fi
         done
 
-        draw_box_bottom $W
         echo ""
-        echo -e " ${C_DIM}${C_GRAY}↑↓ / j k Navigate   Enter Login/Select   q Exit${C_RESET}"
-        echo -e " ${C_DIM}${C_GRAY}● OK  ◑ Expiring  ⚠ Warning  ✗ Expired  ○ No Token${C_RESET}"
+        echo -e "${C_BOLD}Actions:${C_RESET}"
+        
+        # Draw actions
+        for i in "${!items[@]}"; do
+            [ "${item_types[$i]}" != "action" ] && continue
+            
+            local name="${items[$i]}"
+            local act_key="${item_keys[$i]}"
+            local line="  [${act_key}] ${name}"
 
-        # Skip separator during navigation
+            if [ "$i" -eq "$selected" ]; then
+                echo -e " > $line"
+            else
+                echo -e "   $line"
+            fi
+        done
+
+        echo ""
+        echo -e "${C_GRAY}------------------------------------------------------------${C_RESET}"
+        echo -e "Shortcuts: [1-9] Switch Account | [n] New | [r] Rename | [d] Delete | [q]/[x] Exit"
+        echo -e "Navigation: Up/Down/j/k to select, Enter to confirm"
+
+        # Get keypress
         local k=$(read_key)
-        case $k in
-            UP)
-                ((selected--))
-                [ $selected -lt 0 ] && selected=$((${#items[@]}-1))
-                # Skip separator
-                while [ "${item_types[$selected]}" == "sep" ]; do
+        
+        # Check if it matches any direct hotkey
+        local handled=0
+        for i in "${!item_keys[@]}"; do
+            local key_map="${item_keys[$i]}"
+            if [ -n "$key_map" ] && [ "$k" == "$key_map" ]; then
+                local sel_type="${item_types[$i]}"
+                local sel_name="${item_names[$i]}"
+                execute_menu_item "$sel_type" "$sel_name"
+                handled=1
+                break
+            fi
+        done
+
+        # Handle 'x' or 'X' as exit
+        if [ $handled -eq 0 ] && { [ "$k" == "x" ] || [ "$k" == "X" ]; }; then
+            tput cnorm; tput rmcup; exit 0
+        fi
+
+        # If not handled, apply standard navigation
+        if [ $handled -eq 0 ]; then
+            case $k in
+                UP)
                     ((selected--))
                     [ $selected -lt 0 ] && selected=$((${#items[@]}-1))
-                done
-                ;;
-            DOWN)
-                ((selected++))
-                [ $selected -ge ${#items[@]} ] && selected=0
-                # Skip separator
-                while [ "${item_types[$selected]}" == "sep" ]; do
+                    ;;
+                DOWN)
                     ((selected++))
                     [ $selected -ge ${#items[@]} ] && selected=0
-                done
-                ;;
-            ENTER|RIGHT)
-                local sel_type="${item_types[$selected]}"
-                local sel_name="${item_names[$selected]}"
-                if [ "$sel_type" == "account" ]; then
-                    # Switch symlink then launch agy
-                    rm -f "$ORIGINAL"
-                    ln -sf "$BASE/agy-$sel_name" "$ORIGINAL"
-                    tput cnorm; tput rmcup
-                    echo -e "${C_GREEN}▶ Launching agy as: ${C_BOLD}$sel_name${C_RESET}"
-                    exec agy "$@"
-                elif [ "$sel_type" == "action" ]; then
-                    case "$sel_name" in
-                        new)    tput cnorm; create_account ;;
-                        rename) tput cnorm; rename_account ;;
-                        delete) tput cnorm; delete_account ;;
-                        quit)   tput cnorm; tput rmcup; exit 0 ;;
-                    esac
-                fi
-                ;;
-            QUIT) tput cnorm; tput rmcup; exit 0 ;;
-        esac
+                    ;;
+                ENTER|RIGHT)
+                    local sel_type="${item_types[$selected]}"
+                    local sel_name="${item_names[$selected]}"
+                    execute_menu_item "$sel_type" "$sel_name"
+                    ;;
+                QUIT)
+                    tput cnorm; tput rmcup; exit 0
+                    ;;
+            esac
+        fi
     done
 }
 
-
-# ════════════════════════════════════════════════════════════════
-# ── SWITCH ACCOUNT ──────────────────────────────────────────────
-# ════════════════════════════════════════════════════════════════
-switch_account() {
-    local W=70
-    local all=($(get_all_accounts))
-    if [ ${#all[@]} -eq 0 ]; then
-        tput cup 0 0; tput ed
-        draw_box "Switch Account" $W
-        box_empty $W
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_RED}No accounts found. Please run 'agy-setup' first.${C_RESET}  ${C_CYAN}${BOX_V}${C_RESET}"
-        box_empty $W
-        draw_box_bottom $W
-        read -p " Press Enter..."
-        return
-    fi
-
-    local ACTIVE=$(get_active_account)
-    local options=()
-    for name in "${all[@]}"; do
-        local exp=$(get_expiry_plain "$BASE/agy-$name")
-        local iid=$(get_install_id "$BASE/agy-$name")
-        local status=$(get_token_status "$BASE/agy-$name")
-        local badge=""
-        case $status in
-            ok)      badge="${C_GREEN}●${C_RESET}" ;;
-            expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
-            warning) badge="${C_RED}⚠${C_RESET}" ;;
-            expired) badge="${C_RED}✗${C_RESET}" ;;
-            *)       badge="${C_GRAY}○${C_RESET}" ;;
-        esac
-        if [ "$name" == "$ACTIVE" ]; then
-            options+=("$badge ${C_BOLD}${name}${C_RESET} ${C_CYAN}[ACTIVE]${C_RESET}  ID:${iid}  ${exp}")
-        else
-            options+=("$badge ${name}  ID:${iid}  ${exp}")
-        fi
-    done
-    options+=("${C_GRAY}← Back${C_RESET}")
-
-    local selected=0
-    while true; do
-        tput cup 0 0; tput ed
-
-        draw_box "Switch Account — Select Target Account" $W
-        box_empty $W
-        render_menu options $selected $W
-        box_empty $W
-        draw_box_bottom $W
-        echo ""
-        echo -e " ${C_DIM}${C_GRAY}● OK  ◑ Expiring  ⚠ Warning  ✗ Expired${C_RESET}"
-        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
-
-        local k=$(read_key)
-        case $k in
-            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
-            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
-            ENTER|RIGHT) break ;;
-            QUIT)  return ;;
-        esac
-    done
-
-    tput cnorm
-    if [ "$selected" -lt "${#all[@]}" ]; then
-        local target="${all[$selected]}"
+execute_menu_item() {
+    local sel_type="$1"
+    local sel_name="$2"
+    if [ "$sel_type" == "account" ]; then
         rm -f "$ORIGINAL"
-        ln -sf "$BASE/agy-$target" "$ORIGINAL"
-
-        tput cup 0 0; tput ed
-        echo ""
-        center "${C_GREEN}${C_BOLD}✔ Switch Successful!${C_RESET}" $W
-        echo ""
-        draw_box "Status" $W
-        box_row "Active Account" "${C_GREEN}${C_BOLD}$target${C_RESET}" $W
-        box_row "Install ID"     "${C_YELLOW}$(get_install_id "$BASE/agy-$target")...${C_RESET}" $W
-        box_row "History Shared" "${C_GREEN}✓ Shared${C_RESET}" $W
-        box_row "Config Shared"  "${C_GREEN}✓ Shared${C_RESET}" $W
-        box_row "Isolation"      "${C_GREEN}✓ Unique Token & ID${C_RESET}" $W
-        box_empty $W
-        draw_box_bottom $W
-        echo ""
-        read -p " Press Enter to go back..."
+        ln -sf "$BASE/agy-$sel_name" "$ORIGINAL"
+        tput cnorm; tput rmcup
+        echo -e "${C_GREEN}▶ Launching agy as: ${C_BOLD}$sel_name${C_RESET}"
+        exec agy "$@"
+    elif [ "$sel_type" == "action" ]; then
+        case "$sel_name" in
+            new)    tput cnorm; create_account ;;
+            rename) tput cnorm; rename_account ;;
+            delete) tput cnorm; delete_account ;;
+            quit)   tput cnorm; tput rmcup; exit 0 ;;
+        esac
     fi
 }
 
 # ── CREATE ACCOUNT ──────────────────────────────────────────────
 create_account() {
-    local W=62
     tput cup 0 0; tput ed; tput cnorm
-
+    echo -e "${C_BOLD}CREATE NEW ACCOUNT${C_RESET}"
+    echo -e "------------------------------------------------------------"
+    echo -e "Each account will have:"
+    echo -e "  - Unique installation_id (new device fingerprint)"
+    echo -e "  - Isolated OAuth token"
+    echo -e "  - Shared history and config via symlinks"
     echo ""
-    draw_box "Create New Account" $W
-    box_empty $W
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Each account will have:${C_RESET}$(printf '%*s' 25 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Unique installation_id (new & random)$(printf '%*s' 12 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓${C_RESET} Separate OAuth token$(printf '%*s' 28 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_CYAN}🔗${C_RESET} Shared history & config via symlink$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
-    box_empty $W
-    draw_box_bottom $W
-    echo ""
-    read -p " New account name (e.g., account2, office): " name
+    read -p "New account name (e.g., account2, office): " name
     if [ -n "$name" ]; then
         echo ""
         agy-new "$name"
         echo ""
-        echo -e " ${C_GREEN}${C_BOLD}✔ Done!${C_RESET} Run ${C_YELLOW}agy-${name}${C_RESET} to log in to this account."
+        echo -e "${C_GREEN}✔ Done!${C_RESET} Run ${C_YELLOW}agy-${name}${C_RESET} to log in to this account."
     else
-        echo -e " ${C_RED}Cancelled.${C_RESET}"
+        echo -e "${C_RED}Cancelled.${C_RESET}"
     fi
     echo ""
-    read -p " Press Enter to go back..."
-}
-
-# ── LIST ACCOUNTS ───────────────────────────────────────────────
-list_accounts() {
-    local W=72
-    local ACTIVE=$(get_active_account)
-    tput cup 0 0; tput ed; tput cnorm
-
-    echo ""
-    draw_box "All Antigravity Accounts" $W
-    box_empty $W
-
-    # Table Header
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_BOLD}${C_WHITE}$(printf '%-12s %-10s %-10s %-8s %s' 'NAME' 'INSTALL ID' 'STATUS' 'TOKEN' 'EXPIRY')${C_RESET}$(printf '%*s' 4 '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
-
-    local count=0
-    for name in $(get_all_accounts); do
-        local iid=$(get_install_id "$BASE/agy-$name")
-        local status=$(get_token_status "$BASE/agy-$name")
-        local exp=$(get_expiry_plain "$BASE/agy-$name")
-        local badge="" status_text=""
-
-        case $status in
-            ok)      badge="${C_GREEN}●${C_RESET}"; status_text="${C_GREEN}Active  ${C_RESET}" ;;
-            expiring) badge="${C_YELLOW}◑${C_RESET}"; status_text="${C_YELLOW}Expiring${C_RESET}" ;;
-            warning) badge="${C_RED}⚠${C_RESET}"; status_text="${C_RED}Warning ${C_RESET}" ;;
-            expired) badge="${C_RED}✗${C_RESET}"; status_text="${C_RED}Expired ${C_RESET}" ;;
-            *)       badge="${C_GRAY}○${C_RESET}"; status_text="${C_GRAY}No Token${C_RESET}" ;;
-        esac
-
-        local cur_mark=""
-        [ "$name" == "$ACTIVE" ] && cur_mark=" ${C_CYAN}◀${C_RESET}"
-
-        echo -e "${C_CYAN}${BOX_V}${C_RESET} $badge ${C_BOLD}$(printf '%-11s' "$name")${C_RESET}${cur_mark} $(printf '%-10s' "${iid}...") $status_text  ${C_DIM}${exp}${C_RESET}$(printf '%*s' 2 '')${C_CYAN}${BOX_V}${C_RESET}"
-        ((count++))
-    done
-
-    if [ $count -eq 0 ]; then
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}No accounts found. Please run 'agy-setup'.${C_RESET}$(printf '%*s' 22 '')${C_CYAN}${BOX_V}${C_RESET}"
-    fi
-
-    echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Total: ${C_WHITE}${count} account(s)${C_RESET}$(printf '%*s' $((W-19)) '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GRAY}Shared: ${C_BLUE}~/.gemini/agy-shared/ ${C_GRAY}(history, config, knowledge)${C_RESET}$(printf '%*s' 3 '')${C_CYAN}${BOX_V}${C_RESET}"
-    box_empty $W
-    draw_box_bottom $W
-    echo ""
-    echo -e " ${C_DIM}${C_GRAY}◀ = Currently active account${C_RESET}"
-    echo ""
-    read -p " Press Enter to go back..."
+    read -p "Press Enter to go back..."
 }
 
 # ── DELETE ACCOUNT ──────────────────────────────────────────────
 delete_account() {
-    local W=66
     local ACTIVE=$(get_active_account)
     local all=($(get_all_accounts))
 
     if [ ${#all[@]} -eq 0 ]; then
         tput cup 0 0; tput ed
         echo -e "\n ${C_RED}No accounts found.${C_RESET}\n"
-        read -p " Press Enter..."; return
+        read -p "Press Enter to go back..."; return
     fi
 
-    local options=()
-    for name in "${all[@]}"; do
-        local exp=$(get_expiry_plain "$BASE/agy-$name")
+    tput cup 0 0; tput ed; tput cnorm
+    echo -e "${C_BOLD}DELETE ACCOUNT${C_RESET}"
+    echo -e "------------------------------------------------------------"
+    echo -e "Warning: Token and installation_id will be permanently deleted."
+    echo -e "History and config in agy-shared remain safe."
+    echo ""
+
+    for i in "${!all[@]}"; do
+        local name="${all[$i]}"
         local iid=$(get_install_id "$BASE/agy-$name")
         if [ "$name" == "$ACTIVE" ]; then
-            options+=("${C_GRAY}⊘ ${name} [ACTIVE — cannot be deleted]${C_RESET}")
+            echo -e "  [$((i+1))] ${C_GRAY}${name} [ACTIVE - cannot be deleted]${C_RESET}"
         else
-            options+=("${C_RED}✗${C_RESET} ${name}  ID:${iid}  ${exp}")
+            echo -e "  [$((i+1))] ${C_RED}${name}${C_RESET} (ID: ${iid})"
         fi
     done
-    options+=("${C_GRAY}← Back${C_RESET}")
+    echo -e "  [q] Cancel"
+    echo ""
 
-    local selected=0
-    while true; do
-        tput cup 0 0; tput ed
+    read -p "Select account number to delete: " choice
+    if [ "$choice" == "q" ] || [ "$choice" == "Q" ] || [ -z "$choice" ]; then
+        echo -e "Cancelled."
+        read -p "Press Enter to go back..."
+        return
+    fi
 
-        draw_box "Delete Account" $W
-        box_empty $W
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_YELLOW}⚠ Token & installation_id will be permanently deleted.${C_RESET}$(printf '%*s' 2 '')${C_CYAN}${BOX_V}${C_RESET}"
-        echo -e "${C_CYAN}${BOX_V}${C_RESET}  ${C_GREEN}✓ History & config in agy-shared are safe.${C_RESET}$(printf '%*s' 13 '')${C_CYAN}${BOX_V}${C_RESET}"
-        box_empty $W
-        echo -e "${C_CYAN}${BOX_ML}$(hline '─' $((W-2)))${BOX_MR}${C_RESET}"
-        render_menu options $selected $W
-        box_empty $W
-        draw_box_bottom $W
-        echo ""
-        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
-
-        local k=$(read_key)
-        case $k in
-            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
-            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
-            ENTER) break ;;
-            QUIT)  return ;;
-        esac
-    done
-
-    tput cnorm
-    if [ "$selected" -lt "${#all[@]}" ]; then
-        local target="${all[$selected]}"
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -le "${#all[@]}" ] && [ "$choice" -gt 0 ]; then
+        local idx=$((choice - 1))
+        local target="${all[$idx]}"
         if [ "$target" == "$ACTIVE" ]; then
-            echo -e "\n ${C_RED}Cannot delete the currently active account!${C_RESET}\n"
+            echo -e "\n${C_RED}Cannot delete the currently active account!${C_RESET}"
         else
             echo ""
-            draw_box "Confirm Delete" $W
-            box_row "Account" "${C_RED}${C_BOLD}$target${C_RESET}" $W
-            box_row "Action"  "${C_RED}Delete token & installation_id${C_RESET}" $W
-            box_row "Safe"    "${C_GREEN}History & config remain safe${C_RESET}" $W
-            box_empty $W
-            draw_box_bottom $W
-            echo ""
-            read -p " Are you sure? (y/n): " confirm
-            if [[ "$confirm" == "y" ]]; then
-                # Detect sudo and bin_dir
+            read -p "Are you sure you want to delete account '$target'? (y/n): " confirm
+            if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
                 local _SUDO="" _BIN=""
                 if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
                     _SUDO="sudo"; _BIN="/usr/local/bin"
@@ -591,111 +359,94 @@ delete_account() {
                 fi
                 rm -rf "$BASE/agy-$target"
                 $_SUDO rm -f "$_BIN/agy-$target"
-                echo -e "\n ${C_GREEN}✔ Account '${target}' successfully deleted.${C_RESET}"
+                echo -e "\n${C_GREEN}✔ Account '${target}' successfully deleted.${C_RESET}"
             else
-                echo -e " ${C_GRAY}Cancelled.${C_RESET}"
+                echo -e "Cancelled."
             fi
         fi
-        echo ""
-        read -p " Press Enter to go back..."
+    else
+        echo -e "${C_RED}Invalid choice.${C_RESET}"
     fi
+    echo ""
+    read -p "Press Enter to go back..."
 }
 
 # ── RENAME ACCOUNT ──────────────────────────────────────────────
 rename_account() {
-    local W=66
     local ACTIVE=$(get_active_account)
     local all=($(get_all_accounts))
 
     if [ ${#all[@]} -eq 0 ]; then
         echo -e "\n ${C_RED}No accounts found.${C_RESET}\n"
-        read -p " Press Enter..."; return
+        read -p "Press Enter to go back..."; return
     fi
 
-    local options=()
-    for name in "${all[@]}"; do
+    tput cup 0 0; tput ed; tput cnorm
+    echo -e "${C_BOLD}RENAME ACCOUNT${C_RESET}"
+    echo -e "------------------------------------------------------------"
+    echo ""
+
+    for i in "${!all[@]}"; do
+        local name="${all[$i]}"
         local iid=$(get_install_id "$BASE/agy-$name")
         if [ "$name" == "$ACTIVE" ]; then
-            options+=("${C_BOLD}${name}${C_RESET} ${C_CYAN}[active]${C_RESET}  ID:${iid}")
+            echo -e "  [$((i+1))] ${C_BOLD}${name}${C_RESET} [active]"
         else
-            options+=("${name}  ID:${iid}")
+            echo -e "  [$((i+1))] ${name}"
         fi
     done
-    options+=("${C_GRAY}← Back${C_RESET}")
+    echo -e "  [q] Cancel"
+    echo ""
 
-    local selected=0
-    while true; do
-        tput cup 0 0; tput ed
+    read -p "Select account number to rename: " choice
+    if [ "$choice" == "q" ] || [ "$choice" == "Q" ] || [ -z "$choice" ]; then
+        echo -e "Cancelled."
+        read -p "Press Enter to go back..."
+        return
+    fi
 
-        draw_box "✏️  Rename Account — Select Account" $W
-        box_empty $W
-        render_menu options $selected $W
-        box_empty $W
-        draw_box_bottom $W
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -le "${#all[@]}" ] && [ "$choice" -gt 0 ]; then
+        local idx=$((choice - 1))
+        local OLD_NAME="${all[$idx]}"
+        local OLD_DIR="$BASE/agy-$OLD_NAME"
+
         echo ""
-        echo -e " ${C_DIM}${C_GRAY}↑↓ Navigate   Enter Select   q Cancel${C_RESET}"
+        read -p "Enter new name for '$OLD_NAME': " NEW_NAME
 
-        local k=$(read_key)
-        case $k in
-            UP)    ((selected--)); [ $selected -lt 0 ] && selected=$((${#options[@]}-1)) ;;
-            DOWN)  ((selected++)); [ $selected -ge ${#options[@]} ] && selected=0 ;;
-            ENTER) break ;;
-            QUIT)  return ;;
-        esac
-    done
+        if [ -z "$NEW_NAME" ]; then
+            echo -e " ${C_RED}✗ Name cannot be empty. Cancelled.${C_RESET}"
+            read -p "Press Enter to go back..."; return
+        fi
+        if [ "$NEW_NAME" == "$OLD_NAME" ]; then
+            echo -e " ⚠ Name is the same, no changes made."
+            read -p "Press Enter to go back..."; return
+        fi
+        if [ -d "$BASE/agy-$NEW_NAME" ]; then
+            echo -e " ✗ Name '$NEW_NAME' is already used by another account."
+            read -p "Press Enter to go back..."; return
+        fi
 
-    tput cnorm
-    if [ "$selected" -ge "${#all[@]}" ]; then return; fi
+        local _SUDO="" _BIN=""
+        if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
+            _SUDO="sudo"; _BIN="/usr/local/bin"
+        elif [ -w "/usr/local/bin" ]; then
+            _SUDO=""; _BIN="/usr/local/bin"
+        else
+            _SUDO=""; _BIN="$HOME/.local/bin"
+        fi
 
-    local OLD_NAME="${all[$selected]}"
-    local OLD_DIR="$BASE/agy-$OLD_NAME"
+        mv "$OLD_DIR" "$BASE/agy-$NEW_NAME"
+        echo -e " ✔ Directory: agy-${OLD_NAME} → agy-${NEW_NAME}"
 
-    echo ""
-    draw_box "Rename: $OLD_NAME" $W
-    box_row "Current Name" "${C_BOLD}${C_YELLOW}$OLD_NAME${C_RESET}" $W
-    box_empty $W
-    draw_box_bottom $W
-    echo ""
-    read -p " New name: " NEW_NAME
+        if [ "$OLD_NAME" == "$ACTIVE" ]; then
+            rm -f "$ORIGINAL"
+            ln -sf "$BASE/agy-$NEW_NAME" "$ORIGINAL"
+            echo -e " ✔ Active symlink updated → agy-${NEW_NAME}"
+        fi
 
-    # Validation
-    if [ -z "$NEW_NAME" ]; then
-        echo -e " ${C_RED}✗ Name cannot be empty. Cancelled.${C_RESET}"
-        read -p " Press Enter..."; return
-    fi
-    if [ "$NEW_NAME" == "$OLD_NAME" ]; then
-        echo -e " ${C_YELLOW}⚠ Name is the same, no changes made.${C_RESET}"
-        read -p " Press Enter..."; return
-    fi
-    if [ -d "$BASE/agy-$NEW_NAME" ]; then
-        echo -e " ${C_RED}✗ Name '$NEW_NAME' is already used by another account.${C_RESET}"
-        read -p " Press Enter..."; return
-    fi
-
-    # Detect sudo
-    if [ "$EUID" -ne 0 ] && command -v sudo &>/dev/null; then
-        SUDO="sudo"; BIN_DIR="/usr/local/bin"
-    elif [ -w "/usr/local/bin" ]; then
-        SUDO=""; BIN_DIR="/usr/local/bin"
-    else
-        SUDO=""; BIN_DIR="$HOME/.local/bin"
-    fi
-
-    # 1. Rename directory
-    mv "$OLD_DIR" "$BASE/agy-$NEW_NAME"
-    echo -e " ${C_GREEN}✔${C_RESET} Directory: agy-${OLD_NAME} → agy-${NEW_NAME}"
-
-    # 2. Update active symlink if necessary
-    if [ "$OLD_NAME" == "$ACTIVE" ]; then
-        rm -f "$ORIGINAL"
-        ln -sf "$BASE/agy-$NEW_NAME" "$ORIGINAL"
-        echo -e " ${C_GREEN}✔${C_RESET} Active symlink updated → agy-${NEW_NAME}"
-    fi
-
-    # 3. Re-create wrapper command
-    $SUDO rm -f "$BIN_DIR/agy-$OLD_NAME"
-    local TMP=$(mktemp)
-    cat > "$TMP" <<EOF
+        $_SUDO rm -f "$_BIN/agy-$OLD_NAME"
+        local TMP=$(mktemp)
+        cat > "$TMP" <<EOF
 #!/bin/bash
 ACCT_DIR="$BASE/agy-$NEW_NAME"
 ORIGINAL="$ORIGINAL"
@@ -703,82 +454,76 @@ rm -f "\$ORIGINAL"
 ln -sf "\$ACCT_DIR" "\$ORIGINAL"
 exec agy "\$@"
 EOF
-    $SUDO mv "$TMP" "$BIN_DIR/agy-$NEW_NAME"
-    $SUDO chmod +x "$BIN_DIR/agy-$NEW_NAME"
-    echo -e " ${C_GREEN}✔${C_RESET} Wrapper: agy-${OLD_NAME} → agy-${NEW_NAME}"
+        $_SUDO mv "$TMP" "$_BIN/agy-$NEW_NAME"
+        $_SUDO chmod +x "$_BIN/agy-$NEW_NAME"
+        echo -e " ✔ Wrapper: agy-${OLD_NAME} → agy-${NEW_NAME}"
 
+        echo ""
+        echo -e " ${C_GREEN}✔ Rename successful!${C_RESET}  ${C_YELLOW}${OLD_NAME}${C_RESET} → ${C_GREEN}${NEW_NAME}${C_RESET}"
+    else
+        echo -e "${C_RED}Invalid choice.${C_RESET}"
+    fi
     echo ""
-    echo -e " ${C_GREEN}${C_BOLD}✔ Rename successful!${C_RESET}  ${C_YELLOW}${OLD_NAME}${C_RESET} → ${C_GREEN}${NEW_NAME}${C_RESET}"
-    echo ""
-    read -p " Press Enter to go back..."
+    read -p "Press Enter to go back..."
 }
 
 # ── HELP ────────────────────────────────────────────────────────
 show_help() {
-    local W=66
     echo ""
-    echo -e "${C_CYAN}${BOX_TL}$(hline $BOX_H $((W-2)))${BOX_TR}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $((W-2)) '')${C_CYAN}${BOX_V}${C_RESET}"
-    center "${C_BOLD}${C_CYAN}⚡ agyauth${C_RESET}${C_BOLD} — Antigravity Multi-Account Manager${C_RESET}" $W
-    center "${C_DIM}${C_GRAY}https://github.com/galgunawan/agyauth${C_RESET}" $W
-    echo -e "${C_CYAN}${BOX_V}${C_RESET}$(printf '%*s' $((W-2)) '')${C_CYAN}${BOX_V}${C_RESET}"
-    echo -e "${C_CYAN}${BOX_BL}$(hline $BOX_H $((W-2)))${BOX_BR}${C_RESET}"
+    echo -e "${C_BOLD}${C_CYAN}agyauth${C_RESET}${C_BOLD} — Antigravity Multi-Account Manager${C_RESET}"
+    echo -e "https://github.com/galgunawan/agyauth"
+    echo -e "------------------------------------------------------------"
     echo ""
 
-    # Usage
-    echo -e " ${C_BOLD}${C_WHITE}USAGE${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth${C_RESET}                       Open interactive TUI manager"
-    echo -e "   ${C_CYAN}agyauth${C_RESET} ${C_YELLOW}<flag> [arguments]${C_RESET}   See OPTIONS below"
+    echo -e " ${C_BOLD}USAGE${C_RESET}"
+    echo -e "   agyauth                       Open interactive TUI manager"
+    echo -e "   agyauth <flag> [arguments]   See OPTIONS below"
     echo ""
 
-    # Options
-    echo -e " ${C_BOLD}${C_WHITE}OPTIONS${C_RESET}"
-    echo -e "   ${C_YELLOW}-h,  --help${C_RESET}                  Show this help message"
-    echo -e "   ${C_YELLOW}-v,  --version${C_RESET}               Show version information"
-    echo -e "   ${C_YELLOW}-l,  --list${C_RESET}                  List all accounts and token status"
-    echo -e "   ${C_YELLOW}-a,  --active${C_RESET}                Show the currently active account"
-    echo -e "   ${C_YELLOW}-s,  --switch${C_RESET} ${C_WHITE}<name>${C_RESET}        Switch to an account without opening TUI"
-    echo -e "   ${C_YELLOW}-rn, --rename${C_RESET} ${C_WHITE}<old> <new>${C_RESET}  Rename an account without opening TUI"
+    echo -e " ${C_BOLD}OPTIONS${C_RESET}"
+    echo -e "   -h,  --help                  Show this help message"
+    echo -e "   -v,  --version               Show version information"
+    echo -e "   -l,  --list                  List all accounts and token status"
+    echo -e "   -a,  --active                Show the currently active account"
+    echo -e "   -s,  --switch <name>        Show an account without opening TUI"
+    echo -e "   -rn, --rename <old> <new>  Rename an account without opening TUI"
     echo ""
 
-    # Related Commands
-    echo -e " ${C_BOLD}${C_WHITE}RELATED COMMANDS${C_RESET}"
-    echo -e "   ${C_CYAN}agy-setup${C_RESET}                    First-time multi-account setup (run once)"
-    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}<name>${C_RESET}              Add a new account with isolated ID"
-    echo -e "   ${C_CYAN}agy-<name>${C_RESET}                   Switch and run a specific account directly"
+    echo -e " ${C_BOLD}RELATED COMMANDS${C_RESET}"
+    echo -e "   agy-setup                    First-time multi-account setup (run once)"
+    echo -e "   agy-new <name>              Add a new account with isolated ID"
+    echo -e "   agy-<name>                   Switch and run a specific account directly"
     echo ""
 
-    # Examples
-    echo -e " ${C_BOLD}${C_WHITE}EXAMPLES${C_RESET}"
-    echo -e "   ${C_DIM}# First-time setup — run once on a new server${C_RESET}"
-    echo -e "   ${C_CYAN}agy-setup${C_RESET}"
+    echo -e " ${C_BOLD}EXAMPLES${C_RESET}"
+    echo -e "   # First-time setup — run once on a new server"
+    echo -e "   agy-setup"
     echo ""
-    echo -e "   ${C_DIM}# Create a new account${C_RESET}"
-    echo -e "   ${C_CYAN}agy-new${C_RESET} ${C_YELLOW}account2${C_RESET}"
+    echo -e "   # Create a new account"
+    echo -e "   agy-new account2"
     echo ""
-    echo -e "   ${C_DIM}# Open interactive TUI manager — select account and log in${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth${C_RESET}"
+    echo -e "   # Open interactive TUI manager"
+    echo -e "   agyauth"
     echo ""
-    echo -e "   ${C_DIM}# Quickly switch account without TUI${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth -s${C_RESET} ${C_YELLOW}main${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth --switch${C_RESET} ${C_YELLOW}account2${C_RESET}"
+    echo -e "   # Quickly switch account without TUI"
+    echo -e "   agyauth -s main"
+    echo -e "   agyauth --switch account2"
     echo ""
-    echo -e "   ${C_DIM}# Rename an account${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth --rename${C_RESET} ${C_YELLOW}oldname newname${C_RESET}"
+    echo -e "   # Rename an account"
+    echo -e "   agyauth --rename oldname newname"
     echo ""
-    echo -e "   ${C_DIM}# Run account directly without TUI${C_RESET}"
-    echo -e "   ${C_CYAN}agy-main${C_RESET}          ${C_GRAY}(switch + launch agy as main)${C_RESET}"
-    echo -e "   ${C_CYAN}agy-account2${C_RESET}      ${C_GRAY}(switch + launch agy as account2)${C_RESET}"
+    echo -e "   # Run account directly without TUI"
+    echo -e "   agy-main          (switch + launch agy as main)"
+    echo -e "   agy-account2      (switch + launch agy as account2)"
     echo ""
-    echo -e "   ${C_DIM}# Check which account is active${C_RESET}"
-    echo -e "   ${C_CYAN}agyauth -a${C_RESET}"
+    echo -e "   # Check which account is active"
+    echo -e "   agyauth -a"
     echo ""
 
-    # Directory structure
-    echo -e " ${C_BOLD}${C_WHITE}DIRECTORY STRUCTURE${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/agy-shared/${C_RESET}      ${C_GRAY}← shared by all accounts (history, settings, knowledge)${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/agy-<name>/${C_RESET}      ${C_GRAY}← per account: unique token + installation_id${C_RESET}"
-    echo -e "   ${C_BLUE}~/.gemini/antigravity-cli${C_RESET}  ${C_GRAY}← symlink → currently active account${C_RESET}"
+    echo -e " ${C_BOLD}DIRECTORY STRUCTURE${C_RESET}"
+    echo -e "   ~/.gemini/agy-shared/      ← shared by all accounts (history, settings, knowledge)"
+    echo -e "   ~/.gemini/agy-<name>/      ← per account: unique token + installation_id"
+    echo -e "   ~/.gemini/antigravity-cli  ← symlink → currently active account"
     echo ""
 }
 
@@ -813,16 +558,16 @@ case "${1:-}" in
             exp=$(get_expiry_plain "$dir")
             iid=$(get_install_id "$dir")
             status=$(get_token_status "$dir")
-            badge=""
+            badge=" "
             case $status in
-                ok)       badge="${C_GREEN}●${C_RESET}" ;;
-                expiring) badge="${C_YELLOW}◑${C_RESET}" ;;
-                warning)  badge="${C_RED}⚠${C_RESET}" ;;
-                expired)  badge="${C_RED}✗${C_RESET}" ;;
-                *)        badge="${C_GRAY}○${C_RESET}" ;;
+                ok)       badge="[OK] " ;;
+                expiring) badge="[EXP] " ;;
+                warning)  badge="[WAR] " ;;
+                expired)  badge="[EXP] " ;;
+                *)        badge="[N/A] " ;;
             esac
             mark=""
-            [ "$name" = "$ACTIVE" ] && mark=" ${C_CYAN}← active${C_RESET}"
+            [ "$name" = "$ACTIVE" ] && mark=" ← active"
             echo -e "   $badge ${C_BOLD}$(printf '%-15s' "$name")${C_RESET}  ID:${iid}  ${exp}${mark}"
         done
         echo ""
@@ -866,12 +611,12 @@ case "${1:-}" in
             _SUDO=""; _BIN="$HOME/.local/bin"
         fi
         mv "$BASE/agy-$OLD" "$BASE/agy-$NEW"
-        echo -e " ${C_GREEN}✔${C_RESET} Directory: agy-${OLD} → agy-${NEW}"
+        echo -e " / Directory: agy-${OLD} → agy-${NEW}"
         ACTIVE=$(get_active_account)
         if [ "$OLD" == "$ACTIVE" ]; then
             rm -f "$ORIGINAL"
             ln -sf "$BASE/agy-$NEW" "$ORIGINAL"
-            echo -e " ${C_GREEN}✔${C_RESET} Active symlink updated → agy-${NEW}"
+            echo -e " ✔ Active symlink updated → agy-${NEW}"
         fi
         $_SUDO rm -f "$_BIN/agy-$OLD"
         _TMP=$(mktemp)
@@ -885,7 +630,7 @@ exec agy "\$@"
 EOF
         $_SUDO mv "$_TMP" "$_BIN/agy-$NEW"
         $_SUDO chmod +x "$_BIN/agy-$NEW"
-        echo -e " ${C_GREEN}✔${C_RESET} Wrapper: agy-${OLD} → agy-${NEW}"
+        echo -e " ✔ Wrapper: agy-${OLD} → agy-${NEW}"
         echo -e "${C_GREEN}✔ Rename complete: ${C_BOLD}${OLD}${C_RESET} ${C_GREEN}→ ${C_BOLD}${NEW}${C_RESET}"
         exit 0
         ;;
